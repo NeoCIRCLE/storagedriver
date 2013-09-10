@@ -3,13 +3,13 @@ from storagecelery import celery
 
 
 @celery.task()
-def list_disks():
-    return Disk.list('/home/cloud/images')
+def list_disks(dir):
+    return [d.get_desc() for d in Disk.list(dir)]
 
 
 @celery.task()
-def create_disk(json_data):
-    disk = Disk.import_from_json(json_data)
+def create_disk(disk_desc):
+    disk = Disk.deserialize(disk_desc)
     disk.create()
 
 

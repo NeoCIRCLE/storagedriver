@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import re
@@ -23,6 +22,20 @@ class Disk(object):
             raise Exception('Invalid type: %s' % type)
         self.type = type
 
+    @classmethod
+    def deserialize(cls, desc):
+        return cls(**desc)
+
+    def get_desc(self):
+        return {
+            'name': self.name,
+            'dir': self.dir,
+            'format': self.format,
+            'type': self.type,
+            'size': self.size,
+            'base_name': self.base_name,
+        }
+
     def get_path(self):
         return os.path.realpath(self.dir + '/' + self.name)
 
@@ -32,12 +45,6 @@ class Disk(object):
     def __unicode__(self):
         return u'%s %s %s %s' % (self.get_path(), self.format,
                                  self.size, self.get_base())
-
-    @classmethod
-    def import_from_json(cls, json_data):
-        obj = json.loads(json_data)
-        return Disk(obj['dir'], obj['name'], obj['format'], obj['size'],
-                    obj['base_name'], obj['type'])
 
     @classmethod
     def get(cls, dir, name):
