@@ -1,18 +1,10 @@
-import jsonpickle
-
-from celery import Celery
-
 from disk import Disk
-
-BROKER_URL = 'amqp://nyuszi:teszt@localhost:5672/django'
-celery = Celery('tasks', broker=BROKER_URL, backend='amqp')
-celery.config_from_object('celeryconfig')
+from storagecelery import celery
 
 
 @celery.task()
 def list_disks():
-    return jsonpickle.encode(Disk.list('/home/cloud/images'),
-                             unpicklable=False)
+    return Disk.list('/home/cloud/images')
 
 
 @celery.task()
