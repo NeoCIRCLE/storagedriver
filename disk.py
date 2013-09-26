@@ -38,10 +38,15 @@ class Disk(object):
             'name': self.name,
             'dir': self.dir,
             'format': self.format,
-            'type': self.type,
             'size': self.size,
             'base_name': self.base_name,
         }
+
+    def match_types(self, tupple_list):
+        for k in tupple_list:
+            if k[0] == self.type[0]:
+                return k[1]
+        raise Exception("Could not match qemu format %s" % self.format[0])
 
     def get_path(self):
         return os.path.realpath(self.dir + '/' + self.name)
@@ -55,6 +60,8 @@ class Disk(object):
 
     @classmethod
     def get(cls, dir, name):
+        ''' Create disk from path
+        '''
         path = os.path.realpath(dir + '/' + name)
         output = subprocess.check_output(['qemu-img', 'info', path])
 
@@ -75,21 +82,50 @@ class Disk(object):
         return Disk(dir, name, format, size, base, type)
 
     def create(self):
+        ''' Creating new image format specified at self.format.
+            self.format van be "qcow2-normal"
+        '''
+        # Check if type is avaliable to create
+        if self.format[0] not in [k[0] for k in self.CREATE_TYPES]:
+            raise Exception('Invalid format: %s' % self.format)
+        # Check for file if already exist
         if os.path.isfile(self.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
+        # Match model type to qemu type
+        qemu_format = self.match_types(self.CREATE_TYPES)
+        # Build list of Strings as command parameters
         cmdline = ['qemu-img',
                    'create',
-                   '-f', self.format]
-        if self.type == 'snapshot':
-            cmdline.append('-b')
-            cmdline.append(self.get_base())
-        cmdline.append(self.get_path())
-        if self.type != 'snapshot':
-            cmdline.append(str(self.size))
-        print ' '.join(cmdline)
+                   '-f', qemu_format,
+                   str(self.size)]
+        # Call subprocess
+        subprocess.check_output(cmdline)
+
+    def snapshot(self):
+        ''' Creating qcow2 snapshot with base image.
+        '''
+        # Check if snapshot type match
+        if self.format[0] not in [k[0] for k in self.SNAPSHOT_TYPES]:
+            raise Exception('Invalid format: %s' % self.format)
+        # Check if file already exists
+        if os.path.isfile(self.get_path()):
+            raise Exception('File already exists: %s' % self.get_path())
+        # Check if base file exist
+        if not os.path.isfile(self.get_base()):
+            raise Exception('Image Base does not exists: %s' % self.get_base())
+        qemu_format = self.match_types(self.SNAPSHOT_TYPES)
+        # Build list of Strings as command parameters
+        cmdline = ['qemu-img',
+                   'create',
+                   '-f', qemu_format,
+                   '-b', self.get_base(),
+                   str(self.size)]
+        # Call subprocess
         subprocess.check_output(cmdline)
 
     def delete(self):
+        ''' Delete file
+        '''
         if os.path.isfile(self.get_path()):
             os.unlink(self.get_path())
 
