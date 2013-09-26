@@ -103,13 +103,33 @@ class Disk(object):
         # Check if base file exist
         if not os.path.isfile(self.get_base()):
             raise Exception('Image Base does not exists: %s' % self.get_base())
-        qemu_format = self.match_types(self.SNAPSHOT_TYPES)
         # Build list of Strings as command parameters
         cmdline = ['qemu-img',
                    'create',
-                   '-f', qemu_format,
+                   '-f', self.format,
                    '-b', self.get_base(),
                    str(self.size)]
+        # Call subprocess
+        subprocess.check_output(cmdline)
+
+    def merge(self, new_disk):
+        ''' Merging a new_disk from the actual disk and its base.
+        '''
+        # Check if snapshot type match
+        if self.format != 'qcow2':
+            raise Exception('Invalid format: %s' % self.format)
+        # Check if file already exists
+        if os.path.isfile(new_disk.get_path()):
+            raise Exception('File already exists: %s' % self.get_path())
+        # Check if base file exist
+        if not os.path.isfile(self.get_path()):
+            raise Exception('Original image does not exists: %s'
+                            % self.get_base())
+        cmdline = ['qemu-img',
+                   'convert',
+                   self.get_path(),
+                   '-O', new_disk.format,
+                   new_disk.get_path()]
         # Call subprocess
         subprocess.check_output(cmdline)
 
