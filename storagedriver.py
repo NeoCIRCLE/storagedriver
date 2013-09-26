@@ -26,6 +26,13 @@ def snapshot(json_data):
 
 
 @celery.task()
+def merge(old_json, new_json):
+    disk = Disk.import_from_json(old_json)
+    new_disk = Disk.import_from_json(new_json)
+    disk.merge(new_disk)
+
+
+@celery.task()
 def get_disk(json_data):
     disk = Disk.get(dir=json_data['dir'], name=json_data['name'])
     return disk.get_desc()
