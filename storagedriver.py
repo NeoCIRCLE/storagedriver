@@ -20,6 +20,12 @@ def delete_disk(json_data):
 
 
 @celery.task()
-def get_disk(json_data):
+def snapshot(json_data):
     disk = Disk.import_from_json(json_data)
-    return jsonpickle.encode(disk, unpicklable=False)
+    disk.snapshot()
+
+
+@celery.task()
+def get_disk(json_data):
+    disk = Disk.get(dir=json_data['dir'], name=json_data['name'])
+    return disk.get_desc()
