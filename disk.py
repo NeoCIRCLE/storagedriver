@@ -15,9 +15,7 @@ class Disk(object):
     TYPES = [('qcow2-norm', 'qcow2 normal'), ('qcow2-snap', 'qcow2 snapshot'),
              ('iso', 'iso'), ('raw-ro', 'raw read-only'), ('raw-rw', 'raw')]
 
-    CREATE_TYPES = [('qcow2-norm', 'qcow2'), ('raw-ro', 'raw'),
-                    ('raw-rw', 'raw')]
-    SNAPSHOT_TYPES = [('qcow2-snap', 'qcow2')]
+    CREATE_TYPES = ['qcow2', 'raw']
 
     def __init__(self, dir, name, format, size, base_name):
         # TODO: tests
@@ -41,12 +39,6 @@ class Disk(object):
             'size': self.size,
             'base_name': self.base_name,
         }
-
-    def match_types(self, tupple_list):
-        for k in tupple_list:
-            if k[0] == self.type[0]:
-                return k[1]
-        raise Exception("Could not match qemu format %s" % self.format[0])
 
     def get_path(self):
         return os.path.realpath(self.dir + '/' + self.name)
@@ -86,17 +78,15 @@ class Disk(object):
             self.format van be "qcow2-normal"
         '''
         # Check if type is avaliable to create
-        if self.format[0] not in [k[0] for k in self.CREATE_TYPES]:
+        if self.format not in self.CREATE_TYPES:
             raise Exception('Invalid format: %s' % self.format)
         # Check for file if already exist
         if os.path.isfile(self.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
-        # Match model type to qemu type
-        qemu_format = self.match_types(self.CREATE_TYPES)
         # Build list of Strings as command parameters
         cmdline = ['qemu-img',
                    'create',
-                   '-f', qemu_format,
+                   '-f', self.format,
                    str(self.size)]
         # Call subprocess
         subprocess.check_output(cmdline)
@@ -105,7 +95,7 @@ class Disk(object):
         ''' Creating qcow2 snapshot with base image.
         '''
         # Check if snapshot type match
-        if self.format[0] not in [k[0] for k in self.SNAPSHOT_TYPES]:
+        if self.format != 'qcow2':
             raise Exception('Invalid format: %s' % self.format)
         # Check if file already exists
         if os.path.isfile(self.get_path()):
