@@ -8,19 +8,26 @@ re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
 
 
 class Disk(object):
+    ''' Storage driver DISK object.
+        Handle qcow2, raw and iso images.
+        TYPES, CREATE_TYPES, SNAPSHOT_TYPES are hand managed restrictions.
+    '''
+    TYPES = [('qcow2-norm', 'qcow2 normal'), ('qcow2-snap', 'qcow2 snapshot'),
+             ('iso', 'iso'), ('raw-ro', 'raw read-only'), ('raw-rw', 'raw')]
 
-    def __init__(self, dir, name, format, size, base_name, type):
+    CREATE_TYPES = [('qcow2-norm', 'qcow2'), ('raw-ro', 'raw'),
+                    ('raw-rw', 'raw')]
+    SNAPSHOT_TYPES = [('qcow2-snap', 'qcow2')]
+
+    def __init__(self, dir, name, format, size, base_name):
         # TODO: tests
         self.name = name
         self.dir = os.path.realpath(dir)
-        if format not in ['qcow2', 'raw']:
+        if format not in [k[0] for k in self.TYPES]:
             raise Exception('Invalid format: %s' % format)
         self.format = format
         self.size = int(size)
         self.base_name = base_name
-        if type not in ['normal', 'snapshot']:
-            raise Exception('Invalid type: %s' % type)
-        self.type = type
 
     @classmethod
     def deserialize(cls, desc):
