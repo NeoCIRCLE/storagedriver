@@ -12,18 +12,20 @@ class Disk(object):
         Handle qcow2, raw and iso images.
         TYPES, CREATE_TYPES, SNAPSHOT_TYPES are hand managed restrictions.
     '''
-    TYPES = [('qcow2-norm', 'qcow2 normal'), ('qcow2-snap', 'qcow2 snapshot'),
-             ('iso', 'iso'), ('raw-ro', 'raw read-only'), ('raw-rw', 'raw')]
+    TYPES = ['snapshot', 'normal']
+    FORMATS = ['qcow2', 'raw', 'iso']
+    CREATE_FORMATS = ['qcow2', 'raw']
 
-    CREATE_TYPES = ['qcow2', 'raw']
-
-    def __init__(self, dir, name, format, size, base_name):
+    def __init__(self, dir, name, format, type, size, base_name):
         # TODO: tests
         self.name = name
         self.dir = os.path.realpath(dir)
-        if format not in [k[0] for k in self.TYPES]:
+        if format not in self.FORMATS:
             raise Exception('Invalid format: %s' % format)
         self.format = format
+        if type not in self.TYPES:
+            raise Exception('Invalid type: %s' % format)
+        self.type = type
         self.size = int(size)
         self.base_name = base_name
 
@@ -78,8 +80,10 @@ class Disk(object):
             self.format van be "qcow2-normal"
         '''
         # Check if type is avaliable to create
-        if self.format not in self.CREATE_TYPES:
+        if self.format not in self.CREATE_FORMATS:
             raise Exception('Invalid format: %s' % self.format)
+        if self.type != 'normal':
+            raise Exception('Invalid type: %s' % self.format)
         # Check for file if already exist
         if os.path.isfile(self.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
@@ -94,9 +98,11 @@ class Disk(object):
     def snapshot(self):
         ''' Creating qcow2 snapshot with base image.
         '''
-        # Check if snapshot type match
+        # Check if snapshot type and qcow2 format matchmatch
         if self.format != 'qcow2':
             raise Exception('Invalid format: %s' % self.format)
+        if self.type != 'snapshot':
+            raise Exception('Invalid type: %s' % self.format)
         # Check if file already exists
         if os.path.isfile(self.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
@@ -106,9 +112,9 @@ class Disk(object):
         # Build list of Strings as command parameters
         cmdline = ['qemu-img',
                    'create',
-                   '-f', self.format,
                    '-b', self.get_base(),
-                   str(self.size)]
+                   '-f', self.format,
+                   self.get_path()]
         # Call subprocess
         subprocess.check_output(cmdline)
 
