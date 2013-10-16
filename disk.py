@@ -1,6 +1,7 @@
 import os
 import subprocess
 import re
+import logging
 
 re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
                          r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
@@ -91,7 +92,9 @@ class Disk(object):
         cmdline = ['qemu-img',
                    'create',
                    '-f', self.format,
+                   self.get_path(),
                    str(self.size)]
+        logging.info("Create file: %s " % cmdline)
         # Call subprocess
         subprocess.check_output(cmdline)
 
