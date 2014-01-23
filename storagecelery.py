@@ -11,7 +11,7 @@ celery = Celery('storagedriver', backend='amqp',
                 include=['storagedriver'])
 
 celery.conf.update(
-
+    CELERY_TASK_RESULT_EXPIRES = 300,
     CELERY_QUEUES=(
         Queue(HOSTNAME + '.storage', Exchange(
             'storagedriver', type='direct'), routing_key='storagedriver'),
