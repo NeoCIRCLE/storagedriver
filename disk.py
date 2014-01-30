@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import re
@@ -32,6 +33,9 @@ class Disk(object):
 
     @classmethod
     def deserialize(cls, desc):
+        logging.info(desc)
+        if isinstance(desc, basestring):
+            desc = json.loads(desc)
         return cls(**desc)
 
     def get_desc(self):

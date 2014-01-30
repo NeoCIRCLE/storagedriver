@@ -1,6 +1,6 @@
 from disk import Disk
 from storagecelery import celery
-
+from os import path, unlink
 
 @celery.task()
 def list(dir):
@@ -17,6 +17,12 @@ def create(disk_desc):
 def delete(json_data):
     disk = Disk.deserialize(json_data)
     disk.delete()
+
+
+@celery.task()
+def delete_dump():
+    if path.endswith(".dump") and os.path.isfile(path):
+        os.unlink(path)
 
 
 @celery.task()
