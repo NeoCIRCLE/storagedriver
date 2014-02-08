@@ -106,7 +106,7 @@ class Disk(object):
         ''' Creating qcow2 snapshot with base image.
         '''
         # Check if snapshot type and qcow2 format matchmatch
-        if self.format != 'qcow2':
+        if self.format not in ['qcow2', 'iso']:
             raise Exception('Invalid format: %s' % self.format)
         if self.type != 'snapshot':
             raise Exception('Invalid type: %s' % self.format)
@@ -117,11 +117,17 @@ class Disk(object):
         if not os.path.isfile(self.get_base()):
             raise Exception('Image Base does not exists: %s' % self.get_base())
         # Build list of Strings as command parameters
-        cmdline = ['qemu-img',
-                   'create',
-                   '-b', self.get_base(),
-                   '-f', self.format,
-                   self.get_path()]
+        if self.format == 'iso':
+            cmdline = ['ln',
+                       '-s',
+                       self.get_base(),
+                       self.get_path()]
+        else:
+            cmdline = ['qemu-img',
+                       'create',
+                       '-b', self.get_base(),
+                       '-f', self.format,
+                       self.get_path()]
         # Call subprocess
         subprocess.check_output(cmdline)
 
