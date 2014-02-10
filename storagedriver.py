@@ -20,8 +20,8 @@ def delete(json_data):
 
 
 @celery.task()
-def delete_dump():
-    if path.endswith(".dump") and os.path.isfile(path):
+def delete_dump(disk_path):
+    if disk_path.endswith(".dump") and path.isfile(disk_path):
         os.unlink(path)
 
 
