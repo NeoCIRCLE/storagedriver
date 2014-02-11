@@ -1,6 +1,7 @@
 from disk import Disk
 from storagecelery import celery
-from os import path, unlink
+from os import path, unlink, statvfs
+
 
 @celery.task()
 def list(dir):
@@ -42,3 +43,10 @@ def merge(old_json, new_json):
 def get(json_data):
     disk = Disk.get(dir=json_data['dir'], name=json_data['name'])
     return disk.get_desc()
+
+
+@celery.task()
+def get_free_space(path):
+    ''' Return free disk space avaliable at path in bytes.'''
+    s = statvfs()
+    return s.f_bavail * s.f_frsize
