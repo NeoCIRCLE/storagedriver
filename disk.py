@@ -3,6 +3,9 @@ import os
 import subprocess
 import re
 import logging
+import requests
+
+logger = logging.getLogger(__name__)
 
 re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
                          r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
@@ -101,6 +104,31 @@ class Disk(object):
         logging.info("Create file: %s " % cmdline)
         # Call subprocess
         subprocess.check_output(cmdline)
+
+    def download(self, task, url):
+        ''' Download image from url. '''
+        disk_path = self.get_path()
+        logger.info("Downloading image from %s to %s", url, disk_path)
+        r = requests.get(url, stream=True)
+        if r.status_code == 200:
+            class AbortException(Exception):
+                pass
+            try:
+                with open(disk_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=4096):
+                        if task.is_aborted():
+                            raise AbortException()
+                        if chunk:
+                            f.write(chunk)
+                    f.flush()
+                self.size = os.path.getsize(disk_path)
+                logger.debug("Download finished %s (%s bytes)",
+                             self.name, self.size)
+            except AbortException:
+                # Cleanup file:
+                os.unlink(self.get_path())
+                logger.info("Download %s aborted %s removed.",
+                            url, disk_path)
 
     def snapshot(self):
         ''' Creating qcow2 snapshot with base image.
