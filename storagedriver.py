@@ -1,6 +1,7 @@
 from disk import Disk
 from storagecelery import celery
 from os import path, unlink, statvfs
+from celery.contrib.abortable import AbortableTask
 
 
 @celery.task()
@@ -12,6 +13,17 @@ def list(dir):
 def create(disk_desc):
     disk = Disk.deserialize(disk_desc)
     disk.create()
+
+
+class download(AbortableTask):
+    time_limit = 18000  # TODO: calculate proper value it's 5h now
+
+    def run(self, **kwargs):
+        disk_desc = kwargs['disk']
+        url = kwargs['url']
+        disk = Disk.deserialize(disk_desc)
+        disk.download(self, url)
+        return disk.size
 
 
 @celery.task()
