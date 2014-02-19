@@ -19,14 +19,15 @@ Install the nfs-server package::
 
 Create the datastore directory::
 
- $ mkdir /datastore
+ $ sudo mkdir /datastore
  $ sudo chown cloud:cloud /datastore
 
 Edit NFS exports::
 
- $ vim /etc/exports
+ $ sudo vim /etc/exports
 
-Restert the nfs service::
+Restart the nfs service::
+
  $ sudo /etc/init.d/nfs-kernel-server restart
 
 Setting up Storage itself
@@ -46,7 +47,7 @@ Set up default Storage configuration and activate the virtual environment::
   $ cat >>/home/cloud/.virtualenvs/storage/bin/postactivate <<END
   export AMQP_URI='amqp://cloud:password@host:5672/circle'
   END
-  $ workon circle
+  $ workon storage
   $ cd ~/storagedriver
 
 Install the required Python libraries to the virtual environment::
