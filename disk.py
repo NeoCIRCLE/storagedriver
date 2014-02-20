@@ -105,7 +105,7 @@ class Disk(object):
         # Call subprocess
         subprocess.check_output(cmdline)
 
-    def download(self, task, url):
+    def download(self, task, url, parent_id=None):
         ''' Download image from url. '''
         disk_path = self.get_path()
         logger.info("Downloading image from %s to %s", url, disk_path)
@@ -113,13 +113,27 @@ class Disk(object):
         if r.status_code == 200:
             class AbortException(Exception):
                 pass
+            if parent_id is None:
+                parent_id = task.request.id
+            percent_size = float(r.headers['content-length']) / 100
+            percent = 0
+            actual_size = 0
+            chunk_size = 256 * 1024
             try:
                 with open(disk_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=4096):
+                    for chunk in r.iter_content(chunk_size=chunk_size):
                         if task.is_aborted():
                             raise AbortException()
                         if chunk:
                             f.write(chunk)
+                            actual_size += chunk_size
+                            if actual_size > (percent_size * percent):
+                                percent += 1
+                                task.update_state(
+                                    task_id=parent_id,
+                                    state=task.AsyncResult(parent_id).state,
+                                    meta={'size': actual_size,
+                                          'percent': percent})
                     f.flush()
                 self.size = os.path.getsize(disk_path)
                 logger.debug("Download finished %s (%s bytes)",
