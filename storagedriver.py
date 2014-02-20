@@ -21,8 +21,9 @@ class download(AbortableTask):
     def run(self, **kwargs):
         disk_desc = kwargs['disk']
         url = kwargs['url']
+        parent_id = kwargs.get("parent_id", None)
         disk = Disk.deserialize(disk_desc)
-        disk.download(self, url)
+        disk.download(self, url, parent_id)
         return disk.size
 
 
