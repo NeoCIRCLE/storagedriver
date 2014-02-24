@@ -79,3 +79,15 @@ def get_storage_stat(path):
     free_space_percent = 100.0 * free_space / all_space
     return {'free_space': free_space,
             'free_percent': free_space_percent}
+
+
+@celery.task
+def move_to_trash(datastore, disk_name):
+    ''' Move path to the trash directory.
+    '''
+    trash_path = path.join(datastore, trash_directory)
+    disk_path = path.join(datastore, disk_name)
+    if not path.isdir(trash_path):
+        mkdir(trash_path)
+    #TODO: trash dir configurable?
+    move(disk_path, trash_path)
