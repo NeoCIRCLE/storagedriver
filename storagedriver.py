@@ -1,12 +1,24 @@
 from disk import Disk
 from storagecelery import celery
-from os import path, unlink, statvfs
+from os import path, unlink, statvfs, listdir, mkdir
+from shutil import move
 from celery.contrib.abortable import AbortableTask
+import logging
+
+logger = logging.getLogger(__name__)
+
+trash_directory = "trash"
 
 
 @celery.task()
 def list(dir):
     return [d.get_desc() for d in Disk.list(dir)]
+
+
+@celery.task()
+def list_files(datastore):
+    return [l for l in listdir(datastore) if
+            path.isfile(path.join(datastore, l))]
 
 
 @celery.task()
