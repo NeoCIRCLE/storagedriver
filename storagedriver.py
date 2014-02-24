@@ -91,3 +91,25 @@ def move_to_trash(datastore, disk_name):
         mkdir(trash_path)
     #TODO: trash dir configurable?
     move(disk_path, trash_path)
+
+
+@celery.task
+def make_free_space(datastore, percent=10):
+    ''' Check for free space on datastore.
+        If free space is less than the given percent
+        removes oldest files to satisfy the given requirement.
+    '''
+    trash_path = path.join(datastore, trash_directory)
+    files = sorted(listdir(trash_path),
+                   key=lambda x: path.getctime(path.join(trash_path, x)))
+    logger.info("Free space on datastore: %s" %
+                get_storage_stat(trash_path).get('free_percent'))
+    while get_storage_stat(trash_path).get('free_percent') < percent:
+        logger.debug(get_storage_stat(trash_path))
+        try:
+            f = files.pop(0)
+            unlink(path.join(trash_path, f))
+            logger.info('Image: %s removed.' % f)
+        except IndexError:
+            raise Exception("Trash folder is empty.")
+    return True
