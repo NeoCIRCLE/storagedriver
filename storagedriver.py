@@ -71,7 +71,11 @@ def get(json_data):
 
 
 @celery.task()
-def get_free_space(path):
-    ''' Return free disk space avaliable at path in bytes.'''
+def get_storage_stat(path):
+    ''' Return free disk space avaliable at path in bytes and percent.'''
     s = statvfs(path)
-    return s.f_bavail * s.f_frsize
+    all_space = s.f_bsize * s.f_blocks
+    free_space = s.f_bavail * s.f_frsize
+    free_space_percent = 100.0 * free_space / all_space
+    return {'free_space': free_space,
+            'free_percent': free_space_percent}
