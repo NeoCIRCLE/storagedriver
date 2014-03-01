@@ -5,6 +5,8 @@ import re
 import logging
 from shutil import move, copyfileobj
 from zipfile import ZipFile, is_zipfile
+from zlib import decompressobj, MAX_WBITS
+from bz2 import BZ2Decompressor
 
 import requests
 
@@ -122,11 +124,21 @@ class Disk(object):
             percent = 0
             actual_size = 0
             chunk_size = 256 * 1024
+            ext = url.split('.')[-1].lower()
+            if ext == 'gz':
+                decompressor = decompressobj(16 + MAX_WBITS)
+                # undocumented zlib feature http://stackoverflow.com/a/2424549
+            elif ext == 'bz2':
+                decompressor = BZ2Decompressor()
+            clen = max(int(r.headers.get('content-length', 700000000)), 1)
+            percent = 0
             try:
                 with open(disk_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=chunk_size):
                         if task.is_aborted():
                             raise AbortException()
+                        if ext in ('gz', 'bz'):
+                            chunk = decompressor.decompress(chunk)
                         if chunk:
                             f.write(chunk)
                             actual_size += chunk_size
@@ -137,6 +149,8 @@ class Disk(object):
                                     state=task.AsyncResult(parent_id).state,
                                     meta={'size': actual_size,
                                           'percent': percent})
+                    if ext == 'gz':
+                        f.write(decompressor.flush())
                     f.flush()
                 self.size = os.path.getsize(disk_path)
                 logger.debug("Download finished %s (%s bytes)",
@@ -152,7 +166,6 @@ class Disk(object):
                              url, disk_path)
                 raise
             else:
-                ext = url.split('.')[-1].lower()
                 if ext == 'zip' and is_zipfile(disk_path):
                     task.update_state(
                         task_id=parent_id,
