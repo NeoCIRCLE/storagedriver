@@ -3,6 +3,9 @@ import os
 import subprocess
 import re
 import logging
+from shutil import move, copyfileobj
+from zipfile import ZipFile, is_zipfile
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -105,7 +108,7 @@ class Disk(object):
         # Call subprocess
         subprocess.check_output(cmdline)
 
-    def download(self, task, url, parent_id=None):
+    def download(self, task, url, parent_id=None):  # noqa
         ''' Download image from url. '''
         disk_path = self.get_path()
         logger.info("Downloading image from %s to %s", url, disk_path)
@@ -140,9 +143,41 @@ class Disk(object):
                              self.name, self.size)
             except AbortException:
                 # Cleanup file:
-                os.unlink(self.get_path())
+                os.unlink(disk_path)
                 logger.info("Download %s aborted %s removed.",
                             url, disk_path)
+            except:
+                os.unlink(disk_path)
+                logger.error("Download %s failed, %s removed.",
+                             url, disk_path)
+                raise
+            else:
+                ext = url.split('.')[-1].lower()
+                if ext == 'zip' and is_zipfile(disk_path):
+                    task.update_state(
+                        task_id=parent_id,
+                        state=task.AsyncResult(parent_id).state,
+                        meta={'size': actual_size, 'extracting': 'zip',
+                              'percent': 99})
+                    self.extract_iso_from_zip(disk_path)
+
+    def extract_iso_from_zip(self, disk_path):
+        with ZipFile(disk_path, 'r') as z:
+            isos = z.namelist()
+            if len(isos) != 1:
+                isos = [i for i in isos
+                        if i.lower().endswith('.iso')]
+            if len(isos) == 1:
+                logger.info('Unzipping %s started.', disk_path)
+                f = open(disk_path + '~', 'wb')
+                zf = z.open(isos[0])
+                with zf, f:
+                    copyfileobj(zf, f)
+                    f.flush()
+                move(disk_path + '~', disk_path)
+            else:
+                logger.info("Extracting %s failed, keeping original.",
+                            disk_path)
 
     def snapshot(self):
         ''' Creating qcow2 snapshot with base image.
