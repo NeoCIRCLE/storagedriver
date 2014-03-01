@@ -120,9 +120,6 @@ class Disk(object):
                 pass
             if parent_id is None:
                 parent_id = task.request.id
-            percent_size = float(r.headers['content-length']) / 100
-            percent = 0
-            actual_size = 0
             chunk_size = 256 * 1024
             ext = url.split('.')[-1].lower()
             if ext == 'gz':
@@ -139,16 +136,15 @@ class Disk(object):
                             raise AbortException()
                         if ext in ('gz', 'bz'):
                             chunk = decompressor.decompress(chunk)
-                        if chunk:
-                            f.write(chunk)
-                            actual_size += chunk_size
-                            if actual_size > (percent_size * percent):
-                                percent += 1
-                                task.update_state(
-                                    task_id=parent_id,
-                                    state=task.AsyncResult(parent_id).state,
-                                    meta={'size': actual_size,
-                                          'percent': percent})
+                        f.write(chunk)
+                        actsize = f.tell()
+                        new_percent = min(100, round(actsize * 100.0 / clen))
+                        if new_percent > percent:
+                            percent = new_percent
+                            task.update_state(
+                                task_id=parent_id,
+                                state=task.AsyncResult(parent_id).state,
+                                meta={'size': actsize, 'percent': percent})
                     if ext == 'gz':
                         f.write(decompressor.flush())
                     f.flush()
@@ -170,7 +166,7 @@ class Disk(object):
                     task.update_state(
                         task_id=parent_id,
                         state=task.AsyncResult(parent_id).state,
-                        meta={'size': actual_size, 'extracting': 'zip',
+                        meta={'size': actsize, 'extracting': 'zip',
                               'percent': 99})
                     self.extract_iso_from_zip(disk_path)
 
