@@ -202,18 +202,17 @@ class Disk(object):
             raise Exception('Image Base does not exists: %s' % self.get_base())
         # Build list of Strings as command parameters
         if self.format == 'iso':
-            cmdline = ['ln',
-                       '-s',
-                       self.get_base(),
-                       self.get_path()]
+            os.symlink(self.get_base(), self.get_path())
+        elif self.format == 'raw':
+            raise NotImplemented()
         else:
             cmdline = ['qemu-img',
                        'create',
                        '-b', self.get_base(),
                        '-f', self.format,
                        self.get_path()]
-        # Call subprocess
-        subprocess.check_output(cmdline)
+            # Call subprocess
+            subprocess.check_output(cmdline)
 
     def merge(self, new_disk):
         ''' Merging a new_disk from the actual disk and its base.
