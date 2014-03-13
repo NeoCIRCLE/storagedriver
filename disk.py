@@ -192,10 +192,8 @@ class Disk(object):
         ''' Creating qcow2 snapshot with base image.
         '''
         # Check if snapshot type and qcow2 format matchmatch
-        if self.format not in ['qcow2', 'iso']:
-            raise Exception('Invalid format: %s' % self.format)
         if self.type != 'snapshot':
-            raise Exception('Invalid type: %s' % self.format)
+            raise Exception('Invalid type: %s' % self.type)
         # Check if file already exists
         if os.path.isfile(self.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
