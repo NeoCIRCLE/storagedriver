@@ -224,7 +224,7 @@ class Disk(object):
         if os.path.isfile(new_disk.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
         # Check if base file exist
-        if not os.path.isfile(self.get_path()):
+        if not os.path.isfile(self.get_base()):
             raise Exception('Original image does not exists: %s'
                             % self.get_base())
         cmdline = ['qemu-img',
