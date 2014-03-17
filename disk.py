@@ -36,7 +36,10 @@ class Disk(object):
         if type not in self.TYPES:
             raise Exception('Invalid type: %s' % format)
         self.type = type
-        self.size = int(size)
+        try:
+            self.size = int(size)
+        except:
+            self.size = None
         self.base_name = base_name
 
     @classmethod
