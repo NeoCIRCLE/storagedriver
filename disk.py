@@ -3,7 +3,7 @@ import os
 import subprocess
 import re
 import logging
-from shutil import move, copyfileobj
+from shutil import move, copy, copyfileobj
 from zipfile import ZipFile, is_zipfile
 from zlib import decompressobj, MAX_WBITS
 from bz2 import BZ2Decompressor
@@ -226,17 +226,16 @@ class Disk(object):
         # Check if file already exists
         if os.path.isfile(new_disk.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
-        # Check if base file exist
-        if not os.path.isfile(self.get_base()):
-            raise Exception('Original image does not exists: %s'
-                            % self.get_base())
-        cmdline = ['qemu-img',
-                   'convert',
-                   self.get_path(),
-                   '-O', new_disk.format,
-                   new_disk.get_path()]
-        # Call subprocess
-        subprocess.check_output(cmdline)
+        if self.base_name:
+            cmdline = ['qemu-img',
+                       'convert',
+                       self.get_path(),
+                       '-O', new_disk.format,
+                       new_disk.get_path()]
+            # Call subprocess
+            subprocess.check_output(cmdline)
+        else:
+            copy(self.get_path(), new_disk.get_path())
 
     def delete(self):
         ''' Delete file
