@@ -46,6 +46,7 @@ Set up default Storage configuration and activate the virtual environment::
 
   $ cat >>/home/cloud/.virtualenvs/storage/bin/postactivate <<END
   export AMQP_URI='amqp://cloud:password@host:5672/circle'
+  export CACHE_URI='pylibmc://$(hostname):11211/'
   END
   $ workon storage
   $ cd ~/storagedriver
