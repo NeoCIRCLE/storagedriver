@@ -121,6 +121,8 @@ class Disk(object):
         if r.status_code == 200:
             class AbortException(Exception):
                 pass
+            if task.is_aborted():
+                raise AbortException()
             if parent_id is None:
                 parent_id = task.request.id
             chunk_size = 256 * 1024
@@ -135,8 +137,6 @@ class Disk(object):
             try:
                 with open(disk_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=chunk_size):
-                        if task.is_aborted():
-                            raise AbortException()
                         if ext in ('gz', 'bz'):
                             chunk = decompressor.decompress(chunk)
                         f.write(chunk)
@@ -144,10 +144,13 @@ class Disk(object):
                         new_percent = min(100, round(actsize * 100.0 / clen))
                         if new_percent > percent:
                             percent = new_percent
-                            task.update_state(
-                                task_id=parent_id,
-                                state=task.AsyncResult(parent_id).state,
-                                meta={'size': actsize, 'percent': percent})
+                            if not task.is_aborted():
+                                task.update_state(
+                                    task_id=parent_id,
+                                    state=task.AsyncResult(parent_id).state,
+                                    meta={'size': actsize, 'percent': percent})
+                            else:
+                                raise AbortException()
                     if ext == 'gz':
                         f.write(decompressor.flush())
                     f.flush()
