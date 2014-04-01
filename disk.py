@@ -223,13 +223,12 @@ class Disk(object):
     def merge(self, new_disk):
         ''' Merging a new_disk from the actual disk and its base.
         '''
-        # Check if snapshot type match
-        if self.format != 'qcow2':
-            raise Exception('Invalid format: %s' % self.format)
         # Check if file already exists
         if os.path.isfile(new_disk.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
-        if self.base_name:
+        if self.format == "iso":
+            os.symlink(self.get_path(), new_disk.get_path())
+        elif self.base_name:
             cmdline = ['qemu-img',
                        'convert',
                        self.get_path(),
