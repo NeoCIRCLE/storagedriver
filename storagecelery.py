@@ -1,8 +1,20 @@
 from celery import Celery
 from kombu import Queue, Exchange
-from socket import gethostname
 from os import getenv
-HOSTNAME = gethostname()
+from argparse import ArgumentParser
+
+
+parser = ArgumentParser()
+parser.add_argument("-n", "--hostname", dest="hostname",
+                    help="Define the full queue name with"
+                    "with priority", metavar="hostname.queue.priority")
+(args, unknwon_args) = parser.parse_known_args()
+HOSTNAME = vars(args).pop("hostname")
+if HOSTNAME is None:
+    raise Exception("You must define hostname as -n <hostname> or "
+                    "--hostname=<hostname>.\n"
+                    "Hostname format must be hostname.module.priority.")
+
 AMQP_URI = getenv('AMQP_URI')
 CACHE_URI = getenv('CACHE_URI')
 
@@ -15,7 +27,7 @@ celery.conf.update(
     CELERY_CACHE_BACKEND=CACHE_URI,
     CELERY_TASK_RESULT_EXPIRES=300,
     CELERY_QUEUES=(
-        Queue(HOSTNAME + '.storage', Exchange(
+        Queue(HOSTNAME, Exchange(
             'storagedriver', type='direct'), routing_key='storagedriver'),
     )
 )
