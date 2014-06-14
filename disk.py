@@ -44,12 +44,14 @@ class Disk(object):
 
     @classmethod
     def deserialize(cls, desc):
+        """Create cls object from JSON."""
         logging.info(desc)
         if isinstance(desc, basestring):
             desc = json.loads(desc)
         return cls(**desc)
 
     def get_desc(self):
+        """Create dict from Disk object."""
         return {
             'name': self.name,
             'dir': self.dir,
@@ -59,9 +61,11 @@ class Disk(object):
         }
 
     def get_path(self):
+        """Get absolute path for disk."""
         return os.path.realpath(self.dir + '/' + self.name)
 
     def get_base(self):
+        """Get absolute path for disk's base image."""
         return os.path.realpath(self.dir + '/' + self.base_name)
 
     def __unicode__(self):
@@ -70,8 +74,7 @@ class Disk(object):
 
     @classmethod
     def get(cls, dir, name):
-        ''' Create disk from path
-        '''
+        """Create disk from path."""
         path = os.path.realpath(dir + '/' + name)
         output = subprocess.check_output(['qemu-img', 'info', path])
 
@@ -92,9 +95,9 @@ class Disk(object):
         return Disk(dir, name, format, size, base, type)
 
     def create(self):
-        ''' Creating new image format specified at self.format.
-            self.format van be "qcow2-normal"
-        '''
+        """ Creating new image format specified at self.format.
+            self.format can be "qcow2-normal"
+        """
         # Check if type is avaliable to create
         if self.format not in self.CREATE_FORMATS:
             raise Exception('Invalid format: %s' % self.format)
@@ -114,7 +117,7 @@ class Disk(object):
         subprocess.check_output(cmdline)
 
     def download(self, task, url, parent_id=None):  # noqa
-        ''' Download image from url. '''
+        """Download image from url."""
         disk_path = self.get_path()
         logger.info("Downloading image from %s to %s", url, disk_path)
         r = requests.get(url, stream=True)
@@ -221,8 +224,8 @@ class Disk(object):
             subprocess.check_output(cmdline)
 
     def merge(self, new_disk):
-        ''' Merging a new_disk from the actual disk and its base.
-        '''
+        """ Merging a new_disk from the actual disk and its base.
+        """
         # Check if file already exists
         if os.path.isfile(new_disk.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
@@ -240,11 +243,11 @@ class Disk(object):
             copy(self.get_path(), new_disk.get_path())
 
     def delete(self):
-        ''' Delete file
-        '''
+        """ Delete file. """
         if os.path.isfile(self.get_path()):
             os.unlink(self.get_path())
 
     @classmethod
     def list(cls, dir):
+        """ List all files in <dir> directory."""
         return [cls.get(dir, file) for file in os.listdir(dir)]
