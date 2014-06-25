@@ -3,6 +3,7 @@ import os
 import subprocess
 import re
 import logging
+import magic
 from shutil import move, copy, copyfileobj
 from zipfile import ZipFile, is_zipfile
 from zlib import decompressobj, MAX_WBITS
@@ -116,6 +117,22 @@ class Disk(object):
         # Call subprocess
         subprocess.check_output(cmdline)
 
+    def check_valid_image(self):
+        """Check wether the downloaded image is valid.
+        Set the proper type for valid images."""
+        format_map = [
+            ("qcow", "qcow2-norm"),
+            ("iso", "iso")
+        ]
+        with magic.Magic() as m:
+            ftype = m.id_filename(self.get_path())
+            logger.debug("Downloaded file type is: %s", ftype)
+            for file_type, disk_format in format_map:
+                if file_type in ftype.lower():
+                    self.format = disk_format
+                    return True
+        return False
+
     def download(self, task, url, parent_id=None):  # noqa
         """Download image from url."""
         disk_path = self.get_path()
@@ -178,6 +195,10 @@ class Disk(object):
                         meta={'size': actsize, 'extracting': 'zip',
                               'percent': 99})
                     self.extract_iso_from_zip(disk_path)
+                if not self.check_valid_image():
+                    os.unlink(disk_path)
+                    raise Exception("Invalid file format. Only qcow and "
+                                    "iso files are allowed.")
 
     def extract_iso_from_zip(self, disk_path):
         with ZipFile(disk_path, 'r') as z:
