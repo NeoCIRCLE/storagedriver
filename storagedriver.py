@@ -36,7 +36,8 @@ class download(AbortableTask):
         parent_id = kwargs.get("parent_id", None)
         disk = Disk.deserialize(disk_desc)
         disk.download(self, url, parent_id)
-        return disk.size
+        return {'size': disk.size,
+                'type': disk.format}
 
 
 @celery.task()
@@ -89,7 +90,7 @@ def move_to_trash(datastore, disk_name):
     disk_path = path.join(datastore, disk_name)
     if not path.isdir(trash_path):
         mkdir(trash_path)
-    #TODO: trash dir configurable?
+    # TODO: trash dir configurable?
     move(disk_path, trash_path)
 
 

@@ -3,6 +3,7 @@ import os
 import subprocess
 import re
 import logging
+import magic
 from shutil import move, copy, copyfileobj
 from zipfile import ZipFile, is_zipfile
 from zlib import decompressobj, MAX_WBITS
@@ -116,68 +117,90 @@ class Disk(object):
         # Call subprocess
         subprocess.check_output(cmdline)
 
+    def check_valid_image(self):
+        """Check wether the downloaded image is valid.
+        Set the proper type for valid images."""
+        format_map = [
+            ("qcow", "qcow2-norm"),
+            ("iso", "iso")
+        ]
+        with magic.Magic() as m:
+            ftype = m.id_filename(self.get_path())
+            logger.debug("Downloaded file type is: %s", ftype)
+            for file_type, disk_format in format_map:
+                if file_type in ftype.lower():
+                    self.format = disk_format
+                    return True
+        return False
+
     def download(self, task, url, parent_id=None):  # noqa
         """Download image from url."""
         disk_path = self.get_path()
         logger.info("Downloading image from %s to %s", url, disk_path)
         r = requests.get(url, stream=True)
-        if r.status_code == 200:
-            class AbortException(Exception):
-                pass
-            if task.is_aborted():
-                raise AbortException()
-            if parent_id is None:
-                parent_id = task.request.id
-            chunk_size = 256 * 1024
-            ext = url.split('.')[-1].lower()
-            if ext == 'gz':
-                decompressor = decompressobj(16 + MAX_WBITS)
-                # undocumented zlib feature http://stackoverflow.com/a/2424549
-            elif ext == 'bz2':
-                decompressor = BZ2Decompressor()
-            clen = max(int(r.headers.get('content-length', 700000000)), 1)
-            percent = 0
-            try:
-                with open(disk_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        if ext in ('gz', 'bz'):
-                            chunk = decompressor.decompress(chunk)
-                        f.write(chunk)
-                        actsize = f.tell()
-                        new_percent = min(100, round(actsize * 100.0 / clen))
-                        if new_percent > percent:
-                            percent = new_percent
-                            if not task.is_aborted():
-                                task.update_state(
-                                    task_id=parent_id,
-                                    state=task.AsyncResult(parent_id).state,
-                                    meta={'size': actsize, 'percent': percent})
-                            else:
-                                raise AbortException()
-                    if ext == 'gz':
-                        f.write(decompressor.flush())
-                    f.flush()
-                self.size = os.path.getsize(disk_path)
-                logger.debug("Download finished %s (%s bytes)",
-                             self.name, self.size)
-            except AbortException:
-                # Cleanup file:
+        if r.status_code != 200:
+            raise Exception("Invalid response status code: %s" % r.status_code)
+
+        class AbortException(Exception):
+            pass
+        if task.is_aborted():
+            raise AbortException()
+        if parent_id is None:
+            parent_id = task.request.id
+        chunk_size = 256 * 1024
+        ext = url.split('.')[-1].lower()
+        if ext == 'gz':
+            decompressor = decompressobj(16 + MAX_WBITS)
+            # undocumented zlib feature http://stackoverflow.com/a/2424549
+        elif ext == 'bz2':
+            decompressor = BZ2Decompressor()
+        clen = max(int(r.headers.get('content-length', 700000000)), 1)
+        percent = 0
+        try:
+            with open(disk_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=chunk_size):
+                    if ext in ('gz', 'bz'):
+                        chunk = decompressor.decompress(chunk)
+                    f.write(chunk)
+                    actsize = f.tell()
+                    new_percent = min(100, round(actsize * 100.0 / clen))
+                    if new_percent > percent:
+                        percent = new_percent
+                        if not task.is_aborted():
+                            task.update_state(
+                                task_id=parent_id,
+                                state=task.AsyncResult(parent_id).state,
+                                meta={'size': actsize, 'percent': percent})
+                        else:
+                            raise AbortException()
+                if ext == 'gz':
+                    f.write(decompressor.flush())
+                f.flush()
+            self.size = os.path.getsize(disk_path)
+            logger.debug("Download finished %s (%s bytes)",
+                         self.name, self.size)
+        except AbortException:
+            # Cleanup file:
+            os.unlink(disk_path)
+            logger.info("Download %s aborted %s removed.",
+                        url, disk_path)
+        except:
+            os.unlink(disk_path)
+            logger.error("Download %s failed, %s removed.",
+                         url, disk_path)
+            raise
+        else:
+            if ext == 'zip' and is_zipfile(disk_path):
+                task.update_state(
+                    task_id=parent_id,
+                    state=task.AsyncResult(parent_id).state,
+                    meta={'size': actsize, 'extracting': 'zip',
+                          'percent': 99})
+                self.extract_iso_from_zip(disk_path)
+            if not self.check_valid_image():
                 os.unlink(disk_path)
-                logger.info("Download %s aborted %s removed.",
-                            url, disk_path)
-            except:
-                os.unlink(disk_path)
-                logger.error("Download %s failed, %s removed.",
-                             url, disk_path)
-                raise
-            else:
-                if ext == 'zip' and is_zipfile(disk_path):
-                    task.update_state(
-                        task_id=parent_id,
-                        state=task.AsyncResult(parent_id).state,
-                        meta={'size': actsize, 'extracting': 'zip',
-                              'percent': 99})
-                    self.extract_iso_from_zip(disk_path)
+                raise Exception("Invalid file format. Only qcow and "
+                                "iso files are allowed.")
 
     def extract_iso_from_zip(self, disk_path):
         with ZipFile(disk_path, 'r') as z:
