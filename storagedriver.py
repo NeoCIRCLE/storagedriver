@@ -95,6 +95,18 @@ def move_to_trash(datastore, disk_name):
 
 
 @celery.task
+def recover_from_trash(datastore, disk_name):
+    ''' Recover named disk from the trash directory.
+    '''
+    if path.exists(path.join(datastore, disk_name)):
+        return False
+    disk_path = path.join(datastore, trash_directory, disk_name)
+    #TODO: trash dir configurable?
+    move(disk_path, datastore)
+    return True
+
+
+@celery.task
 def make_free_space(datastore, percent=10):
     ''' Check for free space on datastore.
         If free space is less than the given percent
