@@ -101,7 +101,7 @@ def recover_from_trash(datastore, disk_name):
     if path.exists(path.join(datastore, disk_name)):
         return False
     disk_path = path.join(datastore, trash_directory, disk_name)
-    #TODO: trash dir configurable?
+    # TODO: trash dir configurable?
     move(disk_path, datastore)
     return True
 
