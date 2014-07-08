@@ -19,6 +19,7 @@ re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
 
 
 class Disk(object):
+
     ''' Storage driver DISK object.
         Handle qcow2, raw and iso images.
         TYPES, CREATE_TYPES, SNAPSHOT_TYPES are hand managed restrictions.
@@ -139,7 +140,8 @@ class Disk(object):
         logger.info("Downloading image from %s to %s", url, disk_path)
         r = requests.get(url, stream=True)
         if r.status_code != 200:
-            raise Exception("Invalid response status code: %s" % r.status_code)
+            raise Exception("Invalid response status code: %s at %s" %
+                            (r.status_code, url))
 
         class AbortException(Exception):
             pass
@@ -200,7 +202,7 @@ class Disk(object):
             if not self.check_valid_image():
                 os.unlink(disk_path)
                 raise Exception("Invalid file format. Only qcow and "
-                                "iso files are allowed.")
+                                "iso files are allowed. Image from: %s" % url)
 
     def extract_iso_from_zip(self, disk_path):
         with ZipFile(disk_path, 'r') as z:
@@ -246,24 +248,65 @@ class Disk(object):
             # Call subprocess
             subprocess.check_output(cmdline)
 
-    def merge(self, new_disk):
+    def merge(self, task, new_disk):
         """ Merging a new_disk from the actual disk and its base.
         """
+        from time import sleep
+        import threading
+
+        class AbortException(Exception):
+            pass
+        if task.is_aborted():
+            raise AbortException()
         # Check if file already exists
         if os.path.isfile(new_disk.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
         if self.format == "iso":
             os.symlink(self.get_path(), new_disk.get_path())
         elif self.base_name:
-            cmdline = ['qemu-img',
-                       'convert',
-                       self.get_path(),
-                       '-O', new_disk.format,
-                       new_disk.get_path()]
-            # Call subprocess
-            subprocess.check_output(cmdline)
+            try:
+                cmdline = ['qemu-img',
+                           'convert',
+                           self.get_path(),
+                           '-O', new_disk.format,
+                           new_disk.get_path()]
+                # Call subprocess
+                logger.debug(
+                    "Merging %s into %s.", self.get_path(),
+                    new_disk.get_path())
+                proc = subprocess.Popen(cmdline)
+                while True:
+                    if proc.poll() is not None:
+                        break
+                    if task.is_aborted():
+                        logger.warning(
+                            "Merging new disk %s is aborted by user.",
+                            new_disk.get_path())
+                        raise AbortException
+                    sleep(1)
+            except AbortException:
+                proc.terminate()
+                logger.warning("Aborted remove %s", new_disk.get_path())
+                os.unlink(new_disk.get_path())
         else:
-            copy(self.get_path(), new_disk.get_path())
+            try:
+                t = threading.Thread(
+                    target=copy,
+                    args=(
+                        self.get_path(),
+                        new_disk.get_path()))
+                while True:
+                    if not t.isAlive():
+                        break
+                    if task.is_aborted():
+                        logger.warning(
+                            "Merging new disk %s is aborted by user.",
+                            new_disk.get_path())
+                        raise AbortException
+            except AbortException:
+                t._Thread__stop()
+                logger.warning("Aborted remove %s", new_disk.get_path())
+                os.unlink(new_disk.get_path())
 
     def delete(self):
         """ Delete file. """
