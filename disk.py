@@ -4,10 +4,11 @@ import subprocess
 import re
 import logging
 import magic
-from shutil import move, copy, copyfileobj
+from shutil import move, copyfileobj
 from zipfile import ZipFile, is_zipfile
 from zlib import decompressobj, MAX_WBITS
 from bz2 import BZ2Decompressor
+from time import sleep
 
 import requests
 
@@ -16,6 +17,10 @@ logger = logging.getLogger(__name__)
 re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
                          r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
                          r'backing file: \S+ \(actual path: (?P<base>\S+)\))$')
+
+
+class AbortException(Exception):
+    pass
 
 
 class Disk(object):
@@ -143,8 +148,6 @@ class Disk(object):
             raise Exception("Invalid response status code: %s at %s" %
                             (r.status_code, url))
 
-        class AbortException(Exception):
-            pass
         if task.is_aborted():
             raise AbortException()
         if parent_id is None:
@@ -248,65 +251,66 @@ class Disk(object):
             # Call subprocess
             subprocess.check_output(cmdline)
 
+    def merge_disk_with_base(self, task, new_disk):
+        try:
+            cmdline = [
+                'qemu-img', 'convert', self.get_path(),
+                '-O', new_disk.format, new_disk.get_path()]
+            # Call subprocess
+            logger.debug(
+                "Merging %s into %s.", self.get_path(),
+                new_disk.get_path())
+            proc = subprocess.Popen(cmdline)
+            while True:
+                if proc.poll() is not None:
+                    break
+                if task.is_aborted():
+                    logger.warning(
+                        "Merging new disk %s is aborted by user.",
+                        new_disk.get_path())
+                    raise AbortException()
+                sleep(1)
+        except AbortException:
+            proc.terminate()
+            logger.warning("Aborted remove %s", new_disk.get_path())
+            os.unlink(new_disk.get_path())
+
+    def merge_disk_without_base(self, task, new_disk, length=1024 * 1024):
+        try:
+            fsrc = open(self.get_path(), 'rb')
+            fdst = open(new_disk.get_path(), 'wb')
+            with fsrc, fdst:
+                while True:
+                    buf = fsrc.read(length)
+                    if not buf:
+                        break
+                    fdst.write(buf)
+                    if task.is_aborted():
+                        logger.warning(
+                            "Merging new disk %s is aborted by user.",
+                            new_disk.get_path())
+                        raise AbortException()
+        except AbortException:
+            logger.warning("Aborted remove %s", new_disk.get_path())
+            os.unlink(new_disk.get_path())
+
     def merge(self, task, new_disk):
         """ Merging a new_disk from the actual disk and its base.
         """
-        from time import sleep
-        import threading
 
-        class AbortException(Exception):
-            pass
         if task.is_aborted():
             raise AbortException()
+
         # Check if file already exists
         if os.path.isfile(new_disk.get_path()):
             raise Exception('File already exists: %s' % self.get_path())
+
         if self.format == "iso":
             os.symlink(self.get_path(), new_disk.get_path())
         elif self.base_name:
-            try:
-                cmdline = ['qemu-img',
-                           'convert',
-                           self.get_path(),
-                           '-O', new_disk.format,
-                           new_disk.get_path()]
-                # Call subprocess
-                logger.debug(
-                    "Merging %s into %s.", self.get_path(),
-                    new_disk.get_path())
-                proc = subprocess.Popen(cmdline)
-                while True:
-                    if proc.poll() is not None:
-                        break
-                    if task.is_aborted():
-                        logger.warning(
-                            "Merging new disk %s is aborted by user.",
-                            new_disk.get_path())
-                        raise AbortException
-                    sleep(1)
-            except AbortException:
-                proc.terminate()
-                logger.warning("Aborted remove %s", new_disk.get_path())
-                os.unlink(new_disk.get_path())
+            self.merge_disk_with_base(task, new_disk)
         else:
-            try:
-                t = threading.Thread(
-                    target=copy,
-                    args=(
-                        self.get_path(),
-                        new_disk.get_path()))
-                while True:
-                    if not t.isAlive():
-                        break
-                    if task.is_aborted():
-                        logger.warning(
-                            "Merging new disk %s is aborted by user.",
-                            new_disk.get_path())
-                        raise AbortException
-            except AbortException:
-                t._Thread__stop()
-                logger.warning("Aborted remove %s", new_disk.get_path())
-                os.unlink(new_disk.get_path())
+            self.merge_disk_without_base(task, new_disk)
 
     def delete(self):
         """ Delete file. """
