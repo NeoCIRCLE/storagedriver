@@ -58,11 +58,15 @@ def snapshot(json_data):
     disk.snapshot()
 
 
-@celery.task()
-def merge(old_json, new_json):
-    disk = Disk.deserialize(old_json)
-    new_disk = Disk.deserialize(new_json)
-    disk.merge(new_disk)
+class merge(AbortableTask):
+    time_limit = 18000
+
+    def run(self, **kwargs):
+        old_json = kwargs['old_json']
+        new_json = kwargs['new_json']
+        disk = Disk.deserialize(old_json)
+        new_disk = Disk.deserialize(new_json)
+        disk.merge(self, new_disk)
 
 
 @celery.task()
