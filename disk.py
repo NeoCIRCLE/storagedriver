@@ -128,7 +128,8 @@ class Disk(object):
         Set the proper type for valid images."""
         format_map = [
             ("qcow", "qcow2-norm"),
-            ("iso", "iso")
+            ("iso", "iso"),
+            ("x86 boot sector", "iso")
         ]
         with magic.Magic() as m:
             ftype = m.id_filename(self.get_path())
