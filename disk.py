@@ -1,7 +1,6 @@
 import json
 import os
 import subprocess
-import re
 import logging
 import magic
 from shutil import move, copyfileobj
@@ -13,10 +12,6 @@ from time import sleep
 import requests
 
 logger = logging.getLogger(__name__)
-
-re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
-                         r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
-                         r'backing file: \S+ \(actual path: (?P<base>\S+)\))$')
 
 
 class AbortException(Exception):
@@ -33,7 +28,8 @@ class Disk(object):
     FORMATS = ['qcow2', 'raw', 'iso']
     CREATE_FORMATS = ['qcow2', 'raw']
 
-    def __init__(self, dir, name, format, type, size, base_name):
+    def __init__(self, dir, name, format, type, size,
+                 base_name, actual_size=0):
         # TODO: tests
         self.name = name
         self.dir = os.path.realpath(dir)
@@ -47,6 +43,7 @@ class Disk(object):
             self.size = int(size)
         except:
             self.size = None
+        self.actual_size = actual_size
         self.base_name = base_name
 
     @classmethod
@@ -64,6 +61,7 @@ class Disk(object):
             'dir': self.dir,
             'format': self.format,
             'size': self.size,
+            'actual_size': self.actual_size,
             'base_name': self.base_name,
         }
 
@@ -83,23 +81,19 @@ class Disk(object):
     def get(cls, dir, name):
         """Create disk from path."""
         path = os.path.realpath(dir + '/' + name)
-        output = subprocess.check_output(['qemu-img', 'info', path])
-
-        type = 'normal'
-        base = None
-        for line in output.split('\n'):
-            m = re_qemu_img.search(line)
-            if m:
-                res = m.groupdict()
-                if res.get('format', None) is not None:
-                    format = res['format']
-                if res.get('size', None) is not None:
-                    size = res['size']
-                if res.get('base', None) is not None:
-                    base = os.path.basename(res['base'])
-                    type = 'snapshot'
-
-        return Disk(dir, name, format, size, base, type)
+        output = subprocess.check_output(
+            ['qemu-img', 'info', '--output=json', path])
+        disk_info = json.loads(output)
+        name = name
+        format = disk_info.get('format')
+        size = disk_info.get('virtual-size')
+        actual_size = disk_info.get('actual-size')
+        base_name = disk_info.get('backing-filename')
+        if base_name:
+            type = 'snapshot'
+        else:
+            type = 'normal'
+        return Disk(dir, name, format, type, size, base_name, actual_size)
 
     def create(self):
         """ Creating new image format specified at self.format.
