@@ -64,9 +64,10 @@ class merge(AbortableTask):
     def run(self, **kwargs):
         old_json = kwargs['old_json']
         new_json = kwargs['new_json']
+        parent_id = kwargs.get("parent_id", None)
         disk = Disk.deserialize(old_json)
         new_disk = Disk.deserialize(new_json)
-        disk.merge(self, new_disk)
+        disk.merge(self, new_disk, parent_id=parent_id)
 
 
 @celery.task()
