@@ -90,15 +90,13 @@ class Disk(object):
         size = disk_info.get('virtual-size')
         actual_size = disk_info.get('actual-size')
         # Check if disk has base (backing-image)
+        # Based on backing image determine wether snapshot ot normal image
         base_path = disk_info.get('backing-filename')
         if base_path:
             base_name = os.path.basename(base_path)
-        else:
-            base_name = None
-        # Based on backing image determine weather snapshot ot normal image
-        if base_name:
             type = 'snapshot'
         else:
+            base_name = None
             type = 'normal'
         return Disk(dir, name, format, type, size, base_name, actual_size)
 
@@ -292,14 +290,14 @@ class Disk(object):
                 sleep(1)
         except AbortException:
             proc.terminate()
-            logger.warning("Aborted merge job removing %s",
+            logger.warning("Aborted merge job, removing %s",
                            new_disk.get_path())
             os.unlink(new_disk.get_path())
 
         except:
             if proc:
                 proc.terminate()
-            logger.exception("Unknown error occured removing %s ",
+            logger.exception("Unknown error occured, removing %s ",
                              new_disk.get_path())
             os.unlink(new_disk.get_path())
             raise
