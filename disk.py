@@ -9,9 +9,15 @@ from zlib import decompressobj, MAX_WBITS
 from bz2 import BZ2Decompressor
 from time import sleep
 
+import re
+
 import requests
 
 logger = logging.getLogger(__name__)
+
+re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
+                         r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
+                         r'backing file: \S+ \(actual path: (?P<base>\S+)\))$')
 
 
 class AbortException(Exception):
@@ -79,7 +85,30 @@ class Disk(object):
                                  self.size, self.get_base())
 
     @classmethod
-    def get(cls, dir, name):
+    def get_legacy(cls, dir, name):
+        ''' Create disk from path
+        '''
+        path = os.path.realpath(dir + '/' + name)
+        output = subprocess.check_output(['qemu-img', 'info', path])
+
+        type = 'normal'
+        base_name = None
+        for line in output.split('\n'):
+            m = re_qemu_img.search(line)
+            if m:
+                res = m.groupdict()
+                if res.get('format', None) is not None:
+                    format = res['format']
+                if res.get('size', None) is not None:
+                    size = float(res['size'])
+                if res.get('base', None) is not None:
+                    base_name = os.path.basename(res['base'])
+                    type = 'snapshot'
+        actual_size = size
+        return Disk(dir, name, format, type, size, base_name, actual_size)
+
+    @classmethod
+    def get_new(cls, dir, name):
         """Create disk from path."""
         path = os.path.realpath(dir + '/' + name)
         output = subprocess.check_output(
@@ -99,6 +128,14 @@ class Disk(object):
             base_name = None
             type = 'normal'
         return Disk(dir, name, format, type, size, base_name, actual_size)
+
+    @classmethod
+    def get(cls, dir, name):
+        from platform import dist
+        if dist()[1] < '14.04':
+            return Disk.get_legacy(dir, name)
+        else:
+            return Disk.get_new(dir, name)
 
     def create(self):
         """ Creating new image format specified at self.format.
@@ -252,6 +289,7 @@ class Disk(object):
             subprocess.check_output(cmdline)
 
     def merge_disk_with_base(self, task, new_disk, parent_id=None):
+        proc = None
         try:
             cmdline = [
                 'qemu-img', 'convert', self.get_path(),
@@ -303,7 +341,7 @@ class Disk(object):
             raise
 
     def merge_disk_without_base(self, task, new_disk, parent_id=None,
-                                length=1024*1024):
+                                length=1024 * 1024):
         try:
             fsrc = open(self.get_path(), 'rb')
             fdst = open(new_disk.get_path(), 'wb')
