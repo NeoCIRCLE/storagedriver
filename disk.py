@@ -55,7 +55,7 @@ class Disk(object):
     @property
     def checksum(self, blocksize=65536):
         hash = md5()
-        with open(self.get_path(), "r+b") as f:
+        with open(self.get_path(), "rb") as f:
             for block in iter(lambda: f.read(blocksize), ""):
                 hash.update(block)
         return hash.hexdigest()
