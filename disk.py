@@ -53,8 +53,12 @@ class Disk(object):
         self.base_name = base_name
 
     @property
-    def checksum(self):
-        return md5(self.get_path()).hexdigest()
+    def checksum(self, blocksize=65536):
+        hash = md5()
+        with open(self.get_path(), "r+b") as f:
+            for block in iter(lambda: f.read(blocksize), ""):
+                hash.update(block)
+        return hash.hexdigest()
 
     @classmethod
     def deserialize(cls, desc):
