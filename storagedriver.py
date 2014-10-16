@@ -37,7 +37,8 @@ class download(AbortableTask):
         disk = Disk.deserialize(disk_desc)
         disk.download(self, url, parent_id)
         return {'size': disk.size,
-                'type': disk.format}
+                'type': disk.format,
+                'checksum': disk.checksum, }
 
 
 @celery.task()

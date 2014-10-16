@@ -8,7 +8,7 @@ from zipfile import ZipFile, is_zipfile
 from zlib import decompressobj, MAX_WBITS
 from bz2 import BZ2Decompressor
 from time import sleep
-
+from hashlib import md5
 import re
 
 import requests
@@ -51,6 +51,14 @@ class Disk(object):
             self.size = None
         self.actual_size = actual_size
         self.base_name = base_name
+
+    @property
+    def checksum(self, blocksize=65536):
+        hash = md5()
+        with open(self.get_path(), "rb") as f:
+            for block in iter(lambda: f.read(blocksize), ""):
+                hash.update(block)
+        return hash.hexdigest()
 
     @classmethod
     def deserialize(cls, desc):
