@@ -226,7 +226,7 @@ class Disk(object):
                 if ext == 'gz':
                     f.write(decompressor.flush())
                 f.flush()
-            self.size = os.path.getsize(disk_path)
+            self.size = Disk.get(self.dir, self.name).size
             logger.debug("Download finished %s (%s bytes)",
                          self.name, self.size)
         except AbortException:
