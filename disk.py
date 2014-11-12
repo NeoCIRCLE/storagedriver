@@ -19,6 +19,8 @@ re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
                          r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
                          r'backing file: \S+ \(actual path: (?P<base>\S+)\))$')
 
+maximum_size = float(os.getenv("DOWNLOAD_MAX_SIZE", 1024*1024*1024*10))
+
 
 class AbortException(Exception):
     pass
@@ -204,7 +206,7 @@ class Disk(object):
             # undocumented zlib feature http://stackoverflow.com/a/2424549
         elif ext == 'bz2':
             decompressor = BZ2Decompressor()
-        clen = max(int(r.headers.get('content-length', 700000000)), 1)
+        clen = min(int(r.headers.get('content-length', maximum_size)), 1)
         percent = 0
         try:
             with open(disk_path, 'wb') as f:
@@ -213,6 +215,9 @@ class Disk(object):
                         chunk = decompressor.decompress(chunk)
                     f.write(chunk)
                     actsize = f.tell()
+                    if actsize > maximum_size:
+                        raise Exception("%s file is too big. Maximum size "
+                                        "is %s" % url, maximum_size)
                     new_percent = min(100, round(actsize * 100.0 / clen))
                     if new_percent > percent:
                         percent = new_percent
@@ -309,7 +314,7 @@ class Disk(object):
             percent = 0
             diff_disk = Disk.get(self.dir, self.name)
             base_disk = Disk.get(self.dir, self.base_name)
-            clen = max(base_disk.actual_size + diff_disk.actual_size,
+            clen = min(base_disk.actual_size + diff_disk.actual_size,
                        diff_disk.size)
             output = new_disk.get_path()
             proc = subprocess.Popen(cmdline)
