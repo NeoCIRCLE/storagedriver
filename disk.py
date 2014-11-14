@@ -26,6 +26,10 @@ class AbortException(Exception):
     pass
 
 
+class FileTooBig(Exception):
+    pass
+
+
 class Disk(object):
 
     ''' Storage driver DISK object.
@@ -206,7 +210,9 @@ class Disk(object):
             # undocumented zlib feature http://stackoverflow.com/a/2424549
         elif ext == 'bz2':
             decompressor = BZ2Decompressor()
-        clen = min(int(r.headers.get('content-length', maximum_size)), 1)
+        clen = int(r.headers.get('content-length', maximum_size))
+        if clen > maximum_size:
+            raise FileTooBig()
         percent = 0
         try:
             with open(disk_path, 'wb') as f:
@@ -216,8 +222,7 @@ class Disk(object):
                     f.write(chunk)
                     actsize = f.tell()
                     if actsize > maximum_size:
-                        raise Exception("%s file is too big. Maximum size "
-                                        "is %s" % url, maximum_size)
+                        raise FileTooBig()
                     new_percent = min(100, round(actsize * 100.0 / clen))
                     if new_percent > percent:
                         percent = new_percent
@@ -239,6 +244,10 @@ class Disk(object):
             os.unlink(disk_path)
             logger.info("Download %s aborted %s removed.",
                         url, disk_path)
+        except FileTooBig:
+            os.unlink(disk_path)
+            raise Exception("%s file is too big. Maximum size "
+                            "is %s" % url, maximum_size)
         except:
             os.unlink(disk_path)
             logger.error("Download %s failed, %s removed.",
