@@ -1,0 +1,14 @@
+[Unit]
+Description=storagecelery %I
+BindsTo=storage.service
+
+[Service]
+User=cloud
+Group=cloud
+
+KillSignal=SIGTERM
+TimeoutStopSec=600
+Restart=always
+
+WorkingDirectory=/home/cloud/storagedriver
+ExecStart=/bin/bash -c "source /etc/profile; workon storagedriver; exec celery -A storagecelery worker --loglevel=info -n %H.%I"

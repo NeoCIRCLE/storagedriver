@@ -1,0 +1,13 @@
+[Unit]
+Description=CIRCLE storage
+After=network.target
+BindsTo=storagecelery@storage.fast.service
+BindsTo=storagecelery@storage.slow.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/echo
+
+[Install]
+WantedBy=multi-user.target
