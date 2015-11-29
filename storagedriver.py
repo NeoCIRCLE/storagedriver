@@ -1,4 +1,4 @@
-from disk import Disk
+from disk import Disk, CephDisk, CephConnection
 from storagecelery import celery
 from os import path, unlink, statvfs, listdir, mkdir
 from shutil import move
@@ -23,7 +23,12 @@ def list_files(datastore):
 
 @celery.task()
 def create(disk_desc):
-    disk = Disk.deserialize(disk_desc)
+    disk = None
+    if disk_desc["data_store_type"] == "ceph_block":
+        disk = CephDisk.deserialize(disk_desc)
+    else:
+        disk = Disk.desrialize(disk_desc)
+
     disk.create()
 
 
@@ -43,7 +48,12 @@ class download(AbortableTask):
 
 @celery.task()
 def delete(json_data):
-    disk = Disk.deserialize(json_data)
+    disk = None
+    if json_data["data_store_type"] == "ceph_block":
+        disk = CephDisk.deserialize(json_data)
+    else:
+        disk = Disk.deserialize(json_data)
+
     disk.delete()
 
 
@@ -55,7 +65,12 @@ def delete_dump(disk_path):
 
 @celery.task()
 def snapshot(json_data):
-    disk = Disk.deserialize(json_data)
+    disk = None
+    if json_data["data_store_type"] == "ceph_block":
+        disk = CephDisk.deserialize(json_data)
+    else:
+        disk = Disk.deserialize(json_data)
+
     disk.snapshot()
 
 
@@ -66,14 +81,30 @@ class merge(AbortableTask):
         old_json = kwargs['old_json']
         new_json = kwargs['new_json']
         parent_id = kwargs.get("parent_id", None)
-        disk = Disk.deserialize(old_json)
-        new_disk = Disk.deserialize(new_json)
+
+        disk = None
+        new_disk = None
+        if old_json["data_store_type"] == "ceph_block":
+            disk = CephDisk.deserialize(old_json)
+            new_disk = CephDisk.deserialize(new_json)
+        else:
+            disk = Disk.deserialize(old_json)
+            new_disk = Disk.deserialize(new_json)
+
         disk.merge(self, new_disk, parent_id=parent_id)
 
 
 @celery.task()
 def get(json_data):
-    disk = Disk.get(dir=json_data['dir'], name=json_data['name'])
+    disk = None
+    dir = json_data['dir']
+    if json_data["data_store_type"] == "ceph_block":
+        with CephConnection(dir) as conn:
+            disk = CephDisk.get(conn.ioctx, pool_name=dir,
+                                name=json_data['name'])
+    else:
+        disk = Disk.get(dir=dir, name=json_data['name'])
+
     return disk.get_desc()
 
 
