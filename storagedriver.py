@@ -109,11 +109,20 @@ def get(json_data):
 
 
 @celery.task()
-def get_storage_stat(path):
+def get_storage_stat(data_store_type, path):
     ''' Return free disk space avaliable at path in bytes and percent.'''
-    s = statvfs(path)
-    all_space = s.f_bsize * s.f_blocks
-    free_space = s.f_bavail * s.f_frsize
+    all_space = 1
+    free_space = 0
+    if data_store_type == "ceph_block":
+        with CephConnection(str(path)) as conn:
+            stat = conn.cluster.get_cluster_stats()
+            all_space = stat["kb"]
+            free_space = stat["kb_avail"]
+    else:
+        s = statvfs(path)
+        all_space = s.f_bsize * s.f_blocks
+        free_space = s.f_bavail * s.f_frsize
+
     free_space_percent = 100.0 * free_space / all_space
     return {'free_space': free_space,
             'free_percent': free_space_percent}
