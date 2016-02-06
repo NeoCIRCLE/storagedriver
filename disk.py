@@ -210,6 +210,8 @@ class Disk(object):
             # undocumented zlib feature http://stackoverflow.com/a/2424549
         elif ext == 'bz2':
             decompressor = BZ2Decompressor()
+        else:
+            decompressor = None
         clen = int(r.headers.get('content-length', maximum_size))
         if clen > maximum_size:
             raise FileTooBig()
@@ -217,7 +219,7 @@ class Disk(object):
         try:
             with open(disk_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=chunk_size):
-                    if ext in ('gz', 'bz'):
+                    if decompressor:
                         chunk = decompressor.decompress(chunk)
                     f.write(chunk)
                     actsize = f.tell()
