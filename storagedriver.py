@@ -119,8 +119,14 @@ def make_free_space(datastore, percent=10):
         removes oldest files to satisfy the given requirement.
     '''
     trash_path = path.join(datastore, trash_directory)
-    files = sorted(listdir(trash_path),
-                   key=lambda x: path.getctime(path.join(trash_path, x)))
+
+    def comp(filename):
+        try:
+            return path.getctime(path.join(trash_path, filename))
+        except OSError:
+            return 0
+
+    files = sorted(listdir(trash_path), key=comp)
     logger.info("Free space on datastore: %s" %
                 get_storage_stat(trash_path).get('free_percent'))
     while get_storage_stat(trash_path).get('free_percent') < percent:
