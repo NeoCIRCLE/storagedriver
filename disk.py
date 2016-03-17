@@ -444,12 +444,15 @@ class CephConnection:
         self.ioctx = None
 
     def __enter__(self):
-
-        if self.ceph_config is None:
-            self.ceph_config = os.getenv("CEPH_CONFIG", "/etc/ceph/ceph.conf")
-        self.cluster = rados.Rados(conffile=self.ceph_config)
-        self.cluster.connect()
-        self.ioctx = self.cluster.open_ioctx(self.pool_name)
+        try:
+            if self.ceph_config is None:
+                self.ceph_config = os.getenv("CEPH_CONFIG",
+                                             "/etc/ceph/ceph.conf")
+            self.cluster = rados.Rados(conffile=self.ceph_config)
+            self.cluster.connect()
+            self.ioctx = self.cluster.open_ioctx(self.pool_name)
+        except rados.TimedOut as e:
+            raise Exception(e)
 
         return self
 

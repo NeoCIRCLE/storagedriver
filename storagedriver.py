@@ -1,9 +1,11 @@
 from disk import Disk, CephDisk, CephConnection
 from storagecelery import celery
-from os import path, unlink, statvfs, listdir, mkdir
-from shutil import move
+import os
+from os import unlink, statvfs, listdir
 from celery.contrib.abortable import AbortableTask
 import logging
+
+import rbd
 
 logger = logging.getLogger(__name__)
 
@@ -11,14 +13,24 @@ trash_directory = "trash"
 
 
 @celery.task()
-def list(dir):
+def list(data_store_type, dir):
+
+    if data_store_type == "ceph_block":
+        return [d.get_desc() for d in CephDisk.list(dir)]
+
     return [d.get_desc() for d in Disk.list(dir)]
 
 
 @celery.task()
-def list_files(datastore):
-    return [l for l in listdir(datastore) if
-            path.isfile(path.join(datastore, l))]
+def list_files(data_store_type, dir):
+
+    if data_store_type == "ceph_block":
+        with CephConnection(str(dir)) as conn:
+            rbd_inst = rbd.RBD()
+            return rbd_inst.list(conn.ioctx)
+    else:
+        return [l for l in listdir(dir) if
+                os.path.isfile(os.path.join(dir, l))]
 
 
 @celery.task()
@@ -27,7 +39,7 @@ def create(disk_desc):
     if disk_desc["data_store_type"] == "ceph_block":
         disk = CephDisk.deserialize(disk_desc)
     else:
-        disk = Disk.desrialize(disk_desc)
+        disk = Disk.deserialize(disk_desc)
 
     disk.create()
 
@@ -47,29 +59,30 @@ class download(AbortableTask):
 
 
 @celery.task()
-def delete(json_data):
+def delete(disk_desc):
     disk = None
-    if json_data["data_store_type"] == "ceph_block":
-        disk = CephDisk.deserialize(json_data)
+    if disk_desc["data_store_type"] == "ceph_block":
+        disk = CephDisk.deserialize(disk_desc)
     else:
-        disk = Disk.deserialize(json_data)
+        disk = Disk.deserialize(disk_desc)
 
     disk.delete()
 
 
 @celery.task()
-def delete_dump(disk_path):
-    if disk_path.endswith(".dump") and path.isfile(disk_path):
+def delete_dump(data_store_type, disk_path):
+
+    if disk_path.endswith(".dump") and os.path.isfile(disk_path):
         unlink(disk_path)
 
 
 @celery.task()
-def snapshot(json_data):
+def snapshot(disk_desc):
     disk = None
-    if json_data["data_store_type"] == "ceph_block":
-        disk = CephDisk.deserialize(json_data)
+    if disk_desc["data_store_type"] == "ceph_block":
+        disk = CephDisk.deserialize(disk_desc)
     else:
-        disk = Disk.deserialize(json_data)
+        disk = Disk.deserialize(disk_desc)
 
     disk.snapshot()
 
@@ -95,15 +108,16 @@ class merge(AbortableTask):
 
 
 @celery.task()
-def get(json_data):
+def get(disk_desc):
     disk = None
-    dir = json_data['dir']
-    if json_data["data_store_type"] == "ceph_block":
+    dir = disk_desc['dir']
+
+    if disk_desc["data_store_type"] == "ceph_block":
         with CephConnection(dir) as conn:
             disk = CephDisk.get(conn.ioctx, pool_name=dir,
-                                name=json_data['name'])
+                                name=disk_desc['name'])
     else:
-        disk = Disk.get(dir=dir, name=json_data['name'])
+        disk = Disk.get(dir=dir, name=disk_desc['name'])
 
     return disk.get_desc()
 
@@ -129,46 +143,43 @@ def get_storage_stat(data_store_type, path):
 
 
 @celery.task
-def move_to_trash(datastore, disk_name):
-    ''' Move path to the trash directory.
-    '''
-    trash_path = path.join(datastore, trash_directory)
-    disk_path = path.join(datastore, disk_name)
-    if not path.isdir(trash_path):
-        mkdir(trash_path)
-    # TODO: trash dir configurable?
-    move(disk_path, trash_path)
-
-
-@celery.task
-def recover_from_trash(datastore, disk_name):
+def is_exists(data_store_type, path, disk_name):
     ''' Recover named disk from the trash directory.
     '''
-    if path.exists(path.join(datastore, disk_name)):
-        return False
-    disk_path = path.join(datastore, trash_directory, disk_name)
-    # TODO: trash dir configurable?
-    move(disk_path, datastore)
-    return True
+    if data_store_type == "ceph_block":
+        try:
+            with CephConnection(str(path)) as conn:
+                with rbd.Image(conn.ioctx, disk_name):
+                    pass
+        except rbd.ImageNotFound:
+            return False
+        else:
+            return True
+    elif os.path.exists(os.path.join(path, disk_name)):
+        return True
+
+    return False
 
 
 @celery.task
-def make_free_space(datastore, percent=10):
+def make_free_space(data_store_type, path, deletable_disks, percent=10):
     ''' Check for free space on datastore.
         If free space is less than the given percent
         removes oldest files to satisfy the given requirement.
     '''
-    trash_path = path.join(datastore, trash_directory)
-    files = sorted(listdir(trash_path),
-                   key=lambda x: path.getctime(path.join(trash_path, x)))
     logger.info("Free space on datastore: %s" %
-                get_storage_stat(trash_path).get('free_percent'))
-    while get_storage_stat(trash_path).get('free_percent') < percent:
-        logger.debug(get_storage_stat(trash_path))
+                get_storage_stat(path).get('free_percent'))
+    while get_storage_stat(path).get('free_percent') < percent:
+        logger.debug(get_storage_stat(path))
         try:
-            f = files.pop(0)
-            unlink(path.join(trash_path, f))
+            f = deletable_disks.pop(0)
+            if data_store_type == "ceph_block":
+                with CephConnection(str(path)) as conn:
+                    rbd_inst = rbd.RBD()
+                    rbd_inst.remove(conn.ioctx, f)
+            else:
+                unlink(os.path.join(path, f))
             logger.info('Image: %s removed.' % f)
         except IndexError:
-            raise Exception("Trash folder is empty.")
+            raise Exception("Has no deletable disk.")
     return True
