@@ -453,7 +453,18 @@ class CephDisk(Disk):
 
     @property
     def checksum(self, blocksize=65536):
-        raise NotImplementedError()
+        hash = md5()
+        with CephConnection(str(self.dir)) as conn:
+            with rbd.Image(conn.ioctx, self.name) as image:
+                size = image.size()
+                offset = 0
+                while offset + blocksize <= size:
+                    block = image.read(offset, blocksize)
+                    hash.update(block)
+                    offset += blocksize
+                block = image.read(offset, size - offset)
+                hash.update(block)
+        return hash.hexdigest()
 
     @classmethod
     def deserialize(cls, desc):
@@ -492,8 +503,23 @@ class CephDisk(Disk):
     def check_valid_image(self):
         """Check wether the downloaded image is valid.
         Set the proper type for valid images."""
-        # TODO
-        return True
+        format_map = [
+            ("iso", "iso"),
+            ("x86 boot sector", "iso")
+        ]
+        buff = None
+        with CephConnection(str(self.dir)) as conn:
+            with rbd.Image(conn.ioctx, self.name) as image:
+                # 2k may enough determine the file type
+                buff = image.read(0, 2048)
+        with magic.Magic() as m:
+            ftype = m.id_buffer(buff)
+            logger.debug("Downloaded file type is: %s", ftype)
+            for file_type, disk_format in format_map:
+                if file_type in ftype.lower():
+                    self.format = disk_format
+                    return True
+        return False
 
     def download(self, task, url, parent_id=None):
         """Download image from url."""
@@ -516,6 +542,9 @@ class CephDisk(Disk):
             # undocumented zlib feature http://stackoverflow.com/a/2424549
         elif ext == 'bz2':
             decompressor = BZ2Decompressor()
+        if ext == 'zip':
+            raise Exception("The zip format not supported "
+                            "with Ceph Block Device")
         clen = int(r.headers.get('content-length', MAXIMUM_SIZE))
         if clen > MAXIMUM_SIZE:
             raise FileTooBig()
@@ -527,6 +556,7 @@ class CephDisk(Disk):
                 rbd_inst.create(conn.ioctx, self.name, int(MAXIMUM_SIZE))
                 with rbd.Image(conn.ioctx, self.name) as image:
                     offset = 0
+                    actsize = 0
                     for chunk in r.iter_content(chunk_size=chunk_size):
                         if ext in ('gz', 'bz'):
                             chunk = decompressor.decompress(chunk)
@@ -547,6 +577,7 @@ class CephDisk(Disk):
                     if ext == 'gz':
                         image.write(decompressor.flush(), offset)
                     image.flush()
+                    image.resize(actsize)
                 self.size = CephDisk.get(conn.ioctx, self.dir, self.name).size
                 logger.debug("Download finished %s (%s bytes)",
                              self.name, self.size)
@@ -563,6 +594,11 @@ class CephDisk(Disk):
             logger.error("Error occured %s. Download %s failed, %s removed.",
                          e, url, disk_path)
             raise
+        else:
+            if not self.check_valid_image():
+                self.__remove_disk()
+                raise Exception("Invalid file format. Only iso files "
+                                "are allowed. Image from: %s" % url)
 
     def __remove_disk(self):
         with CephConnection(self.dir) as conn:
@@ -575,7 +611,7 @@ class CephDisk(Disk):
     def __snapshot(self, ioctx):
         ''' Creating snapshot with base image.
         '''
-        # Check if snapshot type and rbd format matchmatch
+        # Check if snapshot type and rbd format match
         if self.type != 'snapshot':
             raise Exception('Invalid type: %s' % self.type)
         if self.format != "rbd":

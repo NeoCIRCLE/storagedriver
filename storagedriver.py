@@ -61,7 +61,7 @@ class download(AbortableTask):
         disk.download(self, url, parent_id)
         return {'size': disk.size,
                 'type': disk.format,
-                'checksum': 0, }  # TODO: disk.checksum
+                'checksum': disk.checksum, }
 
 
 @celery.task()
@@ -173,13 +173,14 @@ def make_free_space(data_store_type, path, deletable_disks, percent=10):
         If free space is less than the given percent
         removes oldest files to satisfy the given requirement.
     '''
+    ds_type = data_store_type
     logger.info("Free space on datastore: %s" %
-                get_storage_stat(path).get('free_percent'))
-    while get_storage_stat(path).get('free_percent') < percent:
-        logger.debug(get_storage_stat(path))
+                get_storage_stat(ds_type, path).get('free_percent'))
+    while get_storage_stat(ds_type, path).get('free_percent') < percent:
+        logger.debug(get_storage_stat(ds_type, path))
         try:
             f = deletable_disks.pop(0)
-            if data_store_type == "ceph_block":
+            if ds_type == "ceph_block":
                 with CephConnection(str(path)) as conn:
                     rbd_inst = rbd.RBD()
                     rbd_inst.remove(conn.ioctx, f)
