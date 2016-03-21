@@ -1,4 +1,5 @@
-from disk import Disk, CephDisk, CephConnection
+from disk import Disk, CephDisk
+from util import CephConnection
 from storagecelery import celery
 import os
 from os import unlink, statvfs, listdir
@@ -51,11 +52,16 @@ class download(AbortableTask):
         disk_desc = kwargs['disk']
         url = kwargs['url']
         parent_id = kwargs.get("parent_id", None)
-        disk = Disk.deserialize(disk_desc)
+        disk = None
+        if disk_desc["data_store_type"] == "ceph_block":
+            disk = CephDisk.deserialize(disk_desc)
+        else:
+            disk = Disk.deserialize(disk_desc)
+
         disk.download(self, url, parent_id)
         return {'size': disk.size,
                 'type': disk.format,
-                'checksum': disk.checksum, }
+                'checksum': 0, }  # TODO: disk.checksum
 
 
 @celery.task()
