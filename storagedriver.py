@@ -76,10 +76,16 @@ def delete(disk_desc):
 
 
 @celery.task()
-def delete_dump(data_store_type, disk_path):
+def delete_dump(data_store_type, dir, filename):
 
-    if disk_path.endswith(".dump") and os.path.isfile(disk_path):
-        unlink(disk_path)
+    if data_store_type == "ceph_block":
+        with CephConnection(str(dir)) as conn:
+            rbd_inst = rbd.RBD()
+            rbd_inst.remove(conn.ioctx, str(filename))
+    else:
+        disk_path = dir + "/" + filename
+        if disk_path.endswith(".dump") and os.path.isfile(disk_path):
+            unlink(disk_path)
 
 
 @celery.task()
