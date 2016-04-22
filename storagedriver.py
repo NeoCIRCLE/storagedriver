@@ -15,11 +15,8 @@ trash_directory = "trash"
 
 @celery.task()
 def list(data_store_type, dir):
-
-    if data_store_type == "ceph_block":
-        return [d.get_desc() for d in CephDisk.list(dir)]
-
-    return [d.get_desc() for d in Disk.list(dir)]
+    cls = CephDisk if data_store_type == "ceph_block" else Disk
+    return [d.get_desc() for d in cls.list(dir)]
 
 
 @celery.task()
@@ -36,12 +33,8 @@ def list_files(data_store_type, dir):
 
 @celery.task()
 def create(disk_desc):
-    disk = None
-    if disk_desc["data_store_type"] == "ceph_block":
-        disk = CephDisk.deserialize(disk_desc)
-    else:
-        disk = Disk.deserialize(disk_desc)
-
+    cls = CephDisk if disk_desc["data_store_type"] == "ceph_block" else Disk
+    disk = cls.deserialize(disk_desc)
     disk.create()
 
 
@@ -52,12 +45,8 @@ class download(AbortableTask):
         disk_desc = kwargs['disk']
         url = kwargs['url']
         parent_id = kwargs.get("parent_id", None)
-        disk = None
-        if disk_desc["data_store_type"] == "ceph_block":
-            disk = CephDisk.deserialize(disk_desc)
-        else:
-            disk = Disk.deserialize(disk_desc)
-
+        c = CephDisk if disk_desc["data_store_type"] == "ceph_block" else Disk
+        disk = c.deserialize(disk_desc)
         disk.download(self, url, parent_id)
         return {'size': disk.size,
                 'type': disk.format,
@@ -66,12 +55,8 @@ class download(AbortableTask):
 
 @celery.task()
 def delete(disk_desc):
-    disk = None
-    if disk_desc["data_store_type"] == "ceph_block":
-        disk = CephDisk.deserialize(disk_desc)
-    else:
-        disk = Disk.deserialize(disk_desc)
-
+    cls = CephDisk if disk_desc["data_store_type"] == "ceph_block" else Disk
+    disk = cls.deserialize(disk_desc)
     disk.delete()
 
 
@@ -90,12 +75,8 @@ def delete_dump(data_store_type, dir, filename):
 
 @celery.task()
 def snapshot(disk_desc):
-    disk = None
-    if disk_desc["data_store_type"] == "ceph_block":
-        disk = CephDisk.deserialize(disk_desc)
-    else:
-        disk = Disk.deserialize(disk_desc)
-
+    cls = CephDisk if disk_desc["data_store_type"] == "ceph_block" else Disk
+    disk = cls.deserialize(disk_desc)
     disk.snapshot()
 
 
@@ -106,16 +87,9 @@ class merge(AbortableTask):
         old_json = kwargs['old_json']
         new_json = kwargs['new_json']
         parent_id = kwargs.get("parent_id", None)
-
-        disk = None
-        new_disk = None
-        if old_json["data_store_type"] == "ceph_block":
-            disk = CephDisk.deserialize(old_json)
-            new_disk = CephDisk.deserialize(new_json)
-        else:
-            disk = Disk.deserialize(old_json)
-            new_disk = Disk.deserialize(new_json)
-
+        cls = CephDisk if old_json["data_store_type"] == "ceph_block" else Disk
+        disk = cls.deserialize(old_json)
+        new_disk = cls.deserialize(new_json)
         disk.merge(self, new_disk, parent_id=parent_id)
 
 
@@ -155,7 +129,7 @@ def get_storage_stat(data_store_type, path):
 
 
 @celery.task
-def is_exists(data_store_type, path, disk_name):
+def exists(data_store_type, path, disk_name):
     ''' Recover named disk from the trash directory.
     '''
     if data_store_type == "ceph_block":
