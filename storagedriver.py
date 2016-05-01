@@ -62,7 +62,6 @@ def delete(disk_desc):
 
 @celery.task()
 def delete_dump(data_store_type, dir, filename):
-
     if data_store_type == "ceph_block":
         with CephConnection(str(dir)) as conn:
             rbd_inst = rbd.RBD()
@@ -135,7 +134,7 @@ def exists(data_store_type, path, disk_name):
     if data_store_type == "ceph_block":
         try:
             with CephConnection(str(path)) as conn:
-                with rbd.Image(conn.ioctx, disk_name):
+                with rbd.Image(conn.ioctx, str(disk_name)):
                     pass
         except rbd.ImageNotFound:
             return False
@@ -163,10 +162,16 @@ def make_free_space(data_store_type, path, deletable_disks, percent=10):
             if ds_type == "ceph_block":
                 with CephConnection(str(path)) as conn:
                     rbd_inst = rbd.RBD()
-                    rbd_inst.remove(conn.ioctx, f)
+                    with rbd.Image(conn.ioctx, str(f)) as image:
+                        for snapshot in image.list_snaps():
+                            name = snapshot["name"]
+                            image.unprotect_snap(name)
+                            image.remove_snap(name)
+                    rbd_inst.remove(conn.ioctx, str(f))
             else:
                 unlink(os.path.join(path, f))
             logger.info('Image: %s removed.' % f)
         except IndexError:
-            raise Exception("Has no deletable disk.")
+            logger.warning("Has no deletable disk.")
+            return False
     return True

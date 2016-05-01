@@ -553,7 +553,9 @@ class CephDisk(Disk):
             with CephConnection(self.dir) as conn:
                 rbd_inst = rbd.RBD()
                 # keep calm, Ceph Block Device uses thin-provisioning
-                rbd_inst.create(conn.ioctx, self.name, int(MAXIMUM_SIZE))
+                rbd_inst.create(conn.ioctx, self.name, int(MAXIMUM_SIZE),
+                                old_format=False,
+                                features=rbd.RBD_FEATURE_LAYERING)
                 with rbd.Image(conn.ioctx, self.name) as image:
                     offset = 0
                     actsize = 0
@@ -633,28 +635,6 @@ class CephDisk(Disk):
 
         self.__with_ceph_connection(self.__snapshot)
 
-    def merge_disk_with_base(self, ioctx, task, new_disk, parent_id=None):
-
-        with rbd.Image(ioctx, self.name) as image:
-            logger.debug("Merging %s into %s.",
-                         self.get_path(),
-                         new_disk.get_path())
-
-            image.create_snap(new_disk.name)
-            image.protect_snap(new_disk.name)
-
-        if not task.is_aborted():
-            task.update_state(task_id=parent_id,
-                              state=task.AsyncResult(parent_id).state,
-                              meta={'size': new_disk.size, 'percent': 100})
-        else:
-            logger.warning("Merging new disk %s is aborted by user.",
-                           new_disk.get_path())
-            logger.warning("Aborted merge job, removing %s",
-                           new_disk.get_path())
-            with rbd.Image(ioctx, self.name) as image:
-                image.remove_snap(new_disk.name)
-
     def merge_disk_without_base(self, ioctx, task, new_disk, parent_id=None,
                                 length=1024 * 1024):
 
@@ -688,9 +668,6 @@ class CephDisk(Disk):
         if task.is_aborted():
             raise AbortException()
 
-        # if self.base_name:
-        #     self.merge_disk_with_base(ioctx, task, new_disk, parent_id)
-        # else:
         self.merge_disk_without_base(ioctx, task, new_disk, parent_id)
 
     def merge(self, task, new_disk, parent_id=None):
