@@ -492,6 +492,7 @@ class CephDisk(Disk):
             rbd_inst = rbd.RBD()
             logging.info("Create ceph block: %s (%s)" % (self.get_path(),
                                                          str(self.size)))
+            # NOTE: http://docs.ceph.com/docs/master/rbd/rbd-snapshot/#layering
             rbd_inst.create(ioctx, self.name, self.size, old_format=False,
                             features=rbd.RBD_FEATURE_LAYERING)
         except rbd.ImageExists:
@@ -622,7 +623,7 @@ class CephDisk(Disk):
             rbd_inst = rbd.RBD()
             logging.info("Snapshot ceph block: %s (%s)" % (self.get_path(),
                                                            self.get_base()))
-
+            # NOTE: http://docs.ceph.com/docs/master/rbd/rbd-snapshot/#layering
             rbd_inst.clone(ioctx, self.base_name, "snapshot",
                            ioctx, self.name, features=rbd.RBD_FEATURE_LAYERING)
         except rbd.ImageExists:
@@ -659,8 +660,10 @@ class CephDisk(Disk):
             logger.warning("Aborted merge job, removing %s",
                            new_disk.get_path())
             with rbd.Image(ioctx, new_disk.name) as image:
-                rbd_inst = rbd.RBD()
-                rbd_inst.remove(new_disk.name)
+                image.unprotect_snap("snapshot")
+                image.remove_snap("snapshot")
+            rbd_inst = rbd.RBD()
+            rbd_inst.remove(new_disk.name)
 
     def __merge(self, ioctx, task, new_disk, parent_id=None):
         """ Merging a new_disk from the actual disk and its base.
