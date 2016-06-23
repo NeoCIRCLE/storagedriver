@@ -11,4 +11,5 @@ TimeoutStopSec=600
 Restart=always
 
 WorkingDirectory=/home/cloud/storagedriver
-ExecStart=/bin/bash -c "source /etc/profile; workon storagedriver; exec celery -A storagecelery worker --loglevel=info -n %H.%I"
+
+ExecStart=/bin/bash -c "source /etc/profile; workon storagedriver; exec celery -A storagecelery worker --loglevel=info -n $(/bin/hostname -s).%I"
