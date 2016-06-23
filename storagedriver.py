@@ -1,5 +1,5 @@
 from disk import Disk, CephDisk
-from util import CephConnection
+from ceph import CephConnection
 from storagecelery import celery
 import os
 from os import unlink, statvfs, listdir

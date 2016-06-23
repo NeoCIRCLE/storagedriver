@@ -16,7 +16,7 @@ import requests
 import rbd
 from rbd import InvalidArgument, ImageNotFound
 
-from util import CephConnection
+from ceph import CephConnection
 
 logger = logging.getLogger(__name__)
 
