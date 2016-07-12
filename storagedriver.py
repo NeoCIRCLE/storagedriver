@@ -1,7 +1,7 @@
 from disk import Disk
 from storagecelery import celery
-from os import path, unlink, statvfs, listdir, mkdir
-from shutil import move
+import os
+from os import path, unlink, statvfs, listdir
 from celery.contrib.abortable import AbortableTask
 import logging
 
@@ -89,52 +89,24 @@ def get_storage_stat(path):
 
 
 @celery.task
-def move_to_trash(datastore, disk_name):
-    ''' Move path to the trash directory.
-    '''
-    trash_path = path.join(datastore, trash_directory)
-    disk_path = path.join(datastore, disk_name)
-    if not path.isdir(trash_path):
-        mkdir(trash_path)
-    # TODO: trash dir configurable?
-    move(disk_path, trash_path)
+def exists(path, disk_name):
+    return os.path.exists(os.path.join(path, disk_name))
 
 
 @celery.task
-def recover_from_trash(datastore, disk_name):
-    ''' Recover named disk from the trash directory.
-    '''
-    if path.exists(path.join(datastore, disk_name)):
-        return False
-    disk_path = path.join(datastore, trash_directory, disk_name)
-    # TODO: trash dir configurable?
-    move(disk_path, datastore)
-    return True
-
-
-@celery.task
-def make_free_space(datastore, percent=10):
+def make_free_space(path, deletable_disks, percent=10):
     ''' Check for free space on datastore.
         If free space is less than the given percent
         removes oldest files to satisfy the given requirement.
     '''
-    trash_path = path.join(datastore, trash_directory)
-
-    def comp(filename):
-        try:
-            return path.getctime(path.join(trash_path, filename))
-        except OSError:
-            return 0
-
-    files = sorted(listdir(trash_path), key=comp)
     logger.info("Free space on datastore: %s" %
-                get_storage_stat(trash_path).get('free_percent'))
-    while get_storage_stat(trash_path).get('free_percent') < percent:
-        logger.debug(get_storage_stat(trash_path))
+                get_storage_stat(path).get('free_percent'))
+    while get_storage_stat(path).get('free_percent') < percent:
+        logger.debug(get_storage_stat(path))
         try:
-            f = files.pop(0)
-            unlink(path.join(trash_path, f))
+            f = deletable_disks.pop(0)
+            unlink(os.path.join(path, f))
             logger.info('Image: %s removed.' % f)
         except IndexError:
-            raise Exception("Trash folder is empty.")
+            raise Exception("There is not deletable disk.")
     return True
