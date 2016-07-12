@@ -13,13 +13,18 @@ import re
 
 import requests
 
+import rbd
+from rbd import InvalidArgument, ImageNotFound
+
+from ceph import CephConnection
+
 logger = logging.getLogger(__name__)
 
 re_qemu_img = re.compile(r'(file format: (?P<format>(qcow2|raw))|'
                          r'virtual size: \w+ \((?P<size>[0-9]+) bytes\)|'
                          r'backing file: \S+ \(actual path: (?P<base>\S+)\))$')
 
-maximum_size = float(os.getenv("DOWNLOAD_MAX_SIZE", 1024*1024*1024*10))
+MAXIMUM_SIZE = float(os.getenv("DOWNLOAD_MAX_SIZE", 1024*1024*1024*10))
 
 
 class AbortException(Exception):
@@ -36,9 +41,9 @@ class Disk(object):
         Handle qcow2, raw and iso images.
         TYPES, CREATE_TYPES, SNAPSHOT_TYPES are hand managed restrictions.
     '''
-    TYPES = ['snapshot', 'normal']
-    FORMATS = ['qcow2', 'raw', 'iso']
-    CREATE_FORMATS = ['qcow2', 'raw']
+    TYPES = ('snapshot', 'normal')
+    FORMATS = ('qcow2', 'raw', 'iso', 'rbd')
+    CREATE_FORMATS = ('qcow2', 'raw', 'rbd')
 
     def __init__(self, dir, name, format, type, size,
                  base_name, actual_size=0):
@@ -72,6 +77,7 @@ class Disk(object):
         logging.info(desc)
         if isinstance(desc, basestring):
             desc = json.loads(desc)
+        del desc["data_store_type"]
         return cls(**desc)
 
     def get_desc(self):
@@ -210,8 +216,8 @@ class Disk(object):
             # undocumented zlib feature http://stackoverflow.com/a/2424549
         elif ext == 'bz2':
             decompressor = BZ2Decompressor()
-        clen = int(r.headers.get('content-length', maximum_size))
-        if clen > maximum_size:
+        clen = int(r.headers.get('content-length', MAXIMUM_SIZE))
+        if clen > MAXIMUM_SIZE:
             raise FileTooBig()
         percent = 0
         try:
@@ -221,7 +227,7 @@ class Disk(object):
                         chunk = decompressor.decompress(chunk)
                     f.write(chunk)
                     actsize = f.tell()
-                    if actsize > maximum_size:
+                    if actsize > MAXIMUM_SIZE:
                         raise FileTooBig()
                     new_percent = min(100, round(actsize * 100.0 / clen))
                     if new_percent > percent:
@@ -247,7 +253,7 @@ class Disk(object):
         except FileTooBig:
             os.unlink(disk_path)
             raise Exception("%s file is too big. Maximum size "
-                            "is %s" % url, maximum_size)
+                            "is %s" % (url, MAXIMUM_SIZE))
         except:
             os.unlink(disk_path)
             logger.error("Download %s failed, %s removed.",
@@ -307,6 +313,8 @@ class Disk(object):
                        '-b', self.get_base(),
                        '-f', self.format,
                        self.get_path()]
+            logging.info("Snapshot image: %s (%s)" % (self.get_path(),
+                                                      self.get_base()))
             # Call subprocess
             subprocess.check_output(cmdline)
 
@@ -426,3 +434,294 @@ class Disk(object):
     def list(cls, dir):
         """ List all files in <dir> directory."""
         return [cls.get(dir, file) for file in os.listdir(dir)]
+
+
+class CephDisk(Disk):
+
+    TYPES = ('snapshot', 'normal')
+
+    def __init__(self, dir, name, format, type, size,
+                 base_name, actual_size=0):
+
+        """
+            dir: the pool name
+        """
+
+        super(CephDisk, self).__init__(dir, name, format, type, size,
+                                       base_name, actual_size)
+        self.dir = dir
+
+    @property
+    def checksum(self, blocksize=65536):
+        hash = md5()
+        with CephConnection(str(self.dir)) as conn:
+            with rbd.Image(conn.ioctx, self.name) as image:
+                size = image.size()
+                offset = 0
+                while offset + blocksize <= size:
+                    block = image.read(offset, blocksize)
+                    hash.update(block)
+                    offset += blocksize
+                block = image.read(offset, size - offset)
+                hash.update(block)
+        return hash.hexdigest()
+
+    @classmethod
+    def deserialize(cls, desc):
+        """Create cls object from JSON."""
+        logging.info(desc)
+        if isinstance(desc, basestring):
+            desc = json.loads(desc)
+        del desc["data_store_type"]
+        return cls(**desc)
+
+    def get_path(self):
+        return "rbd:%s/%s" % (self.dir, self.name)
+
+    def get_base(self):
+        return "rbd:%s/%s" % (self.dir, self.base_name)
+
+    def __create(self, ioctx):
+
+        if self.format != "rbd":
+            raise Exception('Invalid format: %s' % self.format)
+        if self.type != 'normal':
+            raise Exception('Invalid type: %s' % self.format)
+
+        try:
+            rbd_inst = rbd.RBD()
+            logging.info("Create ceph block: %s (%s)" % (self.get_path(),
+                                                         str(self.size)))
+            # NOTE: http://docs.ceph.com/docs/master/rbd/rbd-snapshot/#layering
+            rbd_inst.create(ioctx, self.name, self.size, old_format=False,
+                            features=rbd.RBD_FEATURE_LAYERING)
+        except rbd.ImageExists:
+            raise Exception('Ceph image already exists: %s' % self.get_path())
+
+    def create(self):
+        self.__with_ceph_connection(self.__create)
+
+    def check_valid_image(self):
+        """Check wether the downloaded image is valid.
+        Set the proper type for valid images."""
+        format_map = [
+            ("iso", "iso"),
+            ("x86 boot sector", "iso")
+        ]
+        buff = None
+        with CephConnection(str(self.dir)) as conn:
+            with rbd.Image(conn.ioctx, self.name) as image:
+                # 2k may enough determine the file type
+                buff = image.read(0, 2048)
+        with magic.Magic() as m:
+            ftype = m.id_buffer(buff)
+            logger.debug("Downloaded file type is: %s", ftype)
+            for file_type, disk_format in format_map:
+                if file_type in ftype.lower():
+                    self.format = disk_format
+                    return True
+        return False
+
+    def download(self, task, url, parent_id=None):
+        """Download image from url."""
+        # TODO: zip support
+        disk_path = self.get_path()
+        logger.info("Downloading image from %s to %s", url, disk_path)
+        r = requests.get(url, stream=True)
+        if r.status_code != 200:
+            raise Exception("Invalid response status code: %s at %s" %
+                            (r.status_code, url))
+
+        if task.is_aborted():
+            raise AbortException()
+        if parent_id is None:
+            parent_id = task.request.id
+        chunk_size = 256 * 1024
+        ext = url.split('.')[-1].lower()
+        if ext == 'gz':
+            decompressor = decompressobj(16 + MAX_WBITS)
+            # undocumented zlib feature http://stackoverflow.com/a/2424549
+        elif ext == 'bz2':
+            decompressor = BZ2Decompressor()
+        if ext == 'zip':
+            raise Exception("The zip format not supported "
+                            "with Ceph Block Device")
+        clen = int(r.headers.get('content-length', MAXIMUM_SIZE))
+        if clen > MAXIMUM_SIZE:
+            raise FileTooBig()
+        percent = 0
+        try:
+            with CephConnection(self.dir) as conn:
+                rbd_inst = rbd.RBD()
+                # keep calm, Ceph Block Device uses thin-provisioning
+                rbd_inst.create(conn.ioctx, self.name, int(MAXIMUM_SIZE),
+                                old_format=False,
+                                features=rbd.RBD_FEATURE_LAYERING)
+                with rbd.Image(conn.ioctx, self.name) as image:
+                    offset = 0
+                    actsize = 0
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        if ext in ('gz', 'bz'):
+                            chunk = decompressor.decompress(chunk)
+                        offset += image.write(chunk, offset)
+                        actsize = offset
+                        if actsize > MAXIMUM_SIZE:
+                            raise FileTooBig()
+                        new_percent = min(100, round(actsize * 100.0 / clen))
+                        if new_percent > percent:
+                            percent = new_percent
+                            if not task.is_aborted():
+                                task.update_state(
+                                    task_id=parent_id,
+                                    state=task.AsyncResult(parent_id).state,
+                                    meta={'size': actsize, 'percent': percent})
+                            else:
+                                raise AbortException()
+                    if ext == 'gz':
+                        image.write(decompressor.flush(), offset)
+                    image.flush()
+                    image.resize(actsize)
+                self.size = CephDisk.get(conn.ioctx, self.dir, self.name).size
+                logger.debug("Download finished %s (%s bytes)",
+                             self.name, self.size)
+        except AbortException:
+            self.__remove_disk()
+            logger.info("Download %s aborted %s removed.",
+                        url, disk_path)
+        except (FileTooBig, InvalidArgument):
+            self.__remove_disk()
+            raise Exception("%s file is too big. Maximum size "
+                            "is %s" % (url, MAXIMUM_SIZE))
+        except Exception as e:
+            self.__remove_disk()
+            logger.error("Error occured %s. Download %s failed, %s removed.",
+                         e, url, disk_path)
+            raise
+        else:
+            if not self.check_valid_image():
+                self.__remove_disk()
+                raise Exception("Invalid file format. Only iso files "
+                                "are allowed. Image from: %s" % url)
+
+    def __remove_disk(self):
+        with CephConnection(self.dir) as conn:
+            rbd_inst = rbd.RBD()
+            try:
+                rbd_inst.remove(conn.ioctx, self.name)
+            except ImageNotFound:
+                pass
+
+    def __snapshot(self, ioctx):
+        ''' Creating snapshot with base image.
+        '''
+        # Check if snapshot type and rbd format match
+        if self.type != 'snapshot':
+            raise Exception('Invalid type: %s' % self.type)
+        if self.format != "rbd":
+            raise Exception('Invalid format: %s' % self.format)
+        try:
+            rbd_inst = rbd.RBD()
+            logging.info("Snapshot ceph block: %s (%s)" % (self.get_path(),
+                                                           self.get_base()))
+            # NOTE: http://docs.ceph.com/docs/master/rbd/rbd-snapshot/#layering
+            rbd_inst.clone(ioctx, self.base_name, "snapshot",
+                           ioctx, self.name, features=rbd.RBD_FEATURE_LAYERING)
+        except rbd.ImageExists:
+            # TODO: not enough
+            raise Exception('Ceph image already exists: %s' % self.get_base())
+        except Exception as e:
+            raise Exception("%s: %s" % (type(e), e))
+
+    def snapshot(self):
+
+        self.__with_ceph_connection(self.__snapshot)
+
+    def merge_disk_without_base(self, ioctx, task, new_disk, parent_id=None,
+                                length=1024 * 1024):
+
+        with rbd.Image(ioctx, self.name) as image:
+            logger.debug("Merging %s into %s.",
+                         self.get_path(),
+                         new_disk.get_path())
+
+            image.copy(ioctx, new_disk.name)
+
+        with rbd.Image(ioctx, new_disk.name) as image:
+            image.create_snap("snapshot")
+            image.protect_snap("snapshot")
+
+        if not task.is_aborted():
+            task.update_state(task_id=parent_id,
+                              state=task.AsyncResult(parent_id).state,
+                              meta={'size': new_disk.size, 'percent': 100})
+        else:
+            logger.warning("Merging new disk %s is aborted by user.",
+                           new_disk.get_path())
+            logger.warning("Aborted merge job, removing %s",
+                           new_disk.get_path())
+            with rbd.Image(ioctx, new_disk.name) as image:
+                image.unprotect_snap("snapshot")
+                image.remove_snap("snapshot")
+            rbd_inst = rbd.RBD()
+            rbd_inst.remove(new_disk.name)
+
+    def __merge(self, ioctx, task, new_disk, parent_id=None):
+        """ Merging a new_disk from the actual disk and its base.
+        """
+        if task.is_aborted():
+            raise AbortException()
+
+        self.merge_disk_without_base(ioctx, task, new_disk, parent_id)
+
+    def merge(self, task, new_disk, parent_id=None):
+
+        self.__with_ceph_connection(self.__merge, task, new_disk, parent_id)
+
+    def __delete(self, ioctx):
+        try:
+            logger.debug("Delete ceph block %s" % self.get_path())
+            with rbd.Image(ioctx, self.name) as image:
+                for snap in list(image.list_snaps()):
+                    name = snap["name"]
+                    image.unprotect_snap(name)
+                    image.remove_snap(name)
+
+            rbd_inst = rbd.RBD()
+            rbd_inst.remove(ioctx, self.name)
+        except rbd.ImageNotFound:
+            pass
+
+    def delete(self):
+
+        self.__with_ceph_connection(self.__delete)
+
+    def __with_ceph_connection(self, fun, *args, **kwargs):
+            with CephConnection(self.dir) as conn:
+                return fun(conn.ioctx, *args, **kwargs)
+
+    @classmethod
+    def get(cls, ioctx, pool_name, name):
+        """Create disk from Ceph block"""
+        with rbd.Image(ioctx, name) as image:
+            disk_info = image.stat()
+            size = disk_info["num_objs"] * disk_info["obj_size"]
+            actual_size = disk_info["size"]
+            parent = ""
+            type = "normal"
+            try:
+                parent_info = image.parent_info()
+                parent = parent_info[1]
+                type = "snapshot"
+            except rbd.ImageNotFound:
+                pass  # has not got parent
+
+            return CephDisk(pool_name, name, "rbd", type,
+                            size, parent, actual_size)
+
+    @classmethod
+    def list(cls, pool_name):
+        """ List all blocks in <pool_name> pool."""
+        with CephConnection(pool_name=pool_name) as conn:
+                rbd_inst = rbd.RBD()
+                return [cls.get(conn.ioctx, pool_name, file)
+                        for file in rbd_inst.list(conn.ioctx)]
