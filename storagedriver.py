@@ -54,9 +54,33 @@ def delete_dump(disk_path):
 
 
 @celery.task()
-def snapshot(json_data):
+def snapshot_from_base(json_data):
     disk = Disk.deserialize(json_data)
-    disk.snapshot()
+    disk.snapshot_from_base()
+
+
+@celery.task()
+def snapshot(disk_desc, snapshot_name):
+    disk = Disk.deserialize(disk_desc)
+    disk.snapshot(snapshot_name)
+
+
+@celery.task()
+def list_snapshots(disk_desc):
+    disk = Disk.deserialize(disk_desc)
+    return disk.list_snapshots()
+
+
+@celery.task()
+def remove_snapshot(disk_desc, snapshot_id):
+    disk = Disk.deserialize(disk_desc)
+    disk.remove_snapshot(snapshot_id)
+
+
+@celery.task()
+def revert_snapshot(disk_desc, snapshot_id):
+    disk = Disk.deserialize(disk_desc)
+    disk.revert_snapshot(snapshot_id)
 
 
 class merge(AbortableTask):

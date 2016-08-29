@@ -284,7 +284,60 @@ class Disk(object):
                 logger.info("Extracting %s failed, keeping original.",
                             disk_path)
 
-    def snapshot(self):
+    def common_snapshot_operation(self, cmdline):
+        # Check if file already exists
+        if not os.path.isfile(self.get_path()):
+            raise Exception('Image does not exists: %s' % self.get_path())
+        # Build list of Strings as command parameters
+        if self.format == 'iso' or self.format == 'raw':
+            raise NotImplemented()
+        else:
+            # Call subprocess
+            try:
+                return subprocess.check_output(cmdline)
+            except subprocess.CalledProcessError as e:
+                logger.error(e)
+                raise Exception(unicode(e))
+
+    def snapshot(self, snapshot_name):
+        ''' Creating qcow2 snapshot.
+        '''
+        cmdline = ['qemu-img',
+                   'snapshot',
+                   '-c', snapshot_name,
+                   self.get_path()]
+        self.common_snapshot_operation(cmdline)
+
+    def list_snapshots(self):
+        ''' List qcow2 snapshot.
+        '''
+        cmdline = ['qemu-img',
+                   'info',
+                   '--output', 'json',
+                   self.get_path()]
+        output = self.common_snapshot_operation(cmdline)
+        json_data = json.loads(output)
+        return json_data.get('snapshots', [])
+
+    def remove_snapshot(self, id):
+        ''' Remove qcow2 snapshot.
+        '''
+        cmdline = ['qemu-img',
+                   'snapshot',
+                   '-d', unicode(id),
+                   self.get_path()]
+        self.common_snapshot_operation(cmdline)
+
+    def revert_snapshot(self, id):
+        ''' Revert qcow2 snapshot.
+        '''
+        cmdline = ['qemu-img',
+                   'snapshot',
+                   '-a', unicode(id),
+                   self.get_path()]
+        self.common_snapshot_operation(cmdline)
+
+    def snapshot_from_base(self):
         ''' Creating qcow2 snapshot with base image.
         '''
         # Check if snapshot type and qcow2 format matchmatch
