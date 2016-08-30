@@ -60,9 +60,9 @@ def snapshot_from_base(json_data):
 
 
 @celery.task()
-def snapshot(disk_desc, snapshot_name):
+def create_snapshot(disk_desc, snapshot_name):
     disk = Disk.deserialize(disk_desc)
-    disk.snapshot(snapshot_name)
+    disk.create_snapshot(snapshot_name)
 
 
 @celery.task()

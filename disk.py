@@ -285,21 +285,17 @@ class Disk(object):
                             disk_path)
 
     def common_snapshot_operation(self, cmdline):
-        # Check if file already exists
         if not os.path.isfile(self.get_path()):
-            raise Exception('Image does not exists: %s' % self.get_path())
-        # Build list of Strings as command parameters
+            raise Exception('Image does not exist: %s' % self.get_path())
         if self.format == 'iso' or self.format == 'raw':
             raise NotImplemented()
-        else:
-            # Call subprocess
-            try:
-                return subprocess.check_output(cmdline)
-            except subprocess.CalledProcessError as e:
-                logger.error(e)
-                raise Exception(unicode(e))
+        try:
+            return subprocess.check_output(cmdline)
+        except subprocess.CalledProcessError as e:
+            logger.error(e)
+            raise Exception(unicode(e))
 
-    def snapshot(self, snapshot_name):
+    def create_snapshot(self, snapshot_name):
         ''' Creating qcow2 snapshot.
         '''
         cmdline = ['qemu-img',
