@@ -290,7 +290,8 @@ class Disk(object):
         if self.format == 'iso' or self.format == 'raw':
             raise NotImplemented()
         try:
-            return subprocess.check_output(cmdline)
+            return subprocess.check_output(
+                ['/bin/sudo', '/usr/bin/qemu-img'] + cmdline)
         except subprocess.CalledProcessError as e:
             logger.error(e)
             raise Exception(unicode(e))
@@ -298,8 +299,7 @@ class Disk(object):
     def create_snapshot(self, snapshot_name):
         ''' Creating qcow2 snapshot.
         '''
-        cmdline = ['qemu-img',
-                   'snapshot',
+        cmdline = ['snapshot',
                    '-c', snapshot_name,
                    self.get_path()]
         self.common_snapshot_operation(cmdline)
@@ -307,8 +307,7 @@ class Disk(object):
     def list_snapshots(self):
         ''' List qcow2 snapshot.
         '''
-        cmdline = ['qemu-img',
-                   'info',
+        cmdline = ['info',
                    '--output', 'json',
                    self.get_path()]
         output = self.common_snapshot_operation(cmdline)
@@ -318,8 +317,7 @@ class Disk(object):
     def remove_snapshot(self, id):
         ''' Remove qcow2 snapshot.
         '''
-        cmdline = ['qemu-img',
-                   'snapshot',
+        cmdline = ['snapshot',
                    '-d', unicode(id),
                    self.get_path()]
         self.common_snapshot_operation(cmdline)
@@ -327,8 +325,7 @@ class Disk(object):
     def revert_snapshot(self, id):
         ''' Revert qcow2 snapshot.
         '''
-        cmdline = ['qemu-img',
-                   'snapshot',
+        cmdline = ['snapshot',
                    '-a', unicode(id),
                    self.get_path()]
         self.common_snapshot_operation(cmdline)
