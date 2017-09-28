@@ -217,7 +217,7 @@ class Disk(object):
         try:
             with open(disk_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=chunk_size):
-                    if ext in ('gz', 'bz'):
+                    if ext in ('gz', 'bz2'):
                         chunk = decompressor.decompress(chunk)
                     f.write(chunk)
                     actsize = f.tell()
