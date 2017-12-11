@@ -1,8 +1,7 @@
 from disk import Disk, CephDisk
 from ceph import CephConnection
 from storagecelery import celery
-import os
-from os import unlink, statvfs, listdir
+from os import path, unlink, statvfs, listdir
 from celery.contrib.abortable import AbortableTask
 import logging
 
@@ -28,7 +27,7 @@ def list_files(data_store_type, dir):
             return rbd_inst.list(conn.ioctx)
     else:
         return [l for l in listdir(dir) if
-                os.path.isfile(os.path.join(dir, l))]
+                path.isfile(path.join(dir, l))]
 
 
 @celery.task()
@@ -68,7 +67,7 @@ def delete_dump(data_store_type, dir, filename):
             rbd_inst.remove(conn.ioctx, str(filename))
     else:
         disk_path = dir + "/" + filename
-        if disk_path.endswith(".dump") and os.path.isfile(disk_path):
+        if disk_path.endswith(".dump") and path.isfile(disk_path):
             unlink(disk_path)
 
 
@@ -160,7 +159,7 @@ def exists(data_store_type, path, disk_name):
             return False
         else:
             return True
-    elif os.path.exists(os.path.join(path, disk_name)):
+    elif path.exists(path.join(path, disk_name)):
         return True
 
     return False
@@ -189,7 +188,7 @@ def make_free_space(data_store_type, path, deletable_disks, percent=10):
                             image.remove_snap(name)
                     rbd_inst.remove(conn.ioctx, str(f))
             else:
-                unlink(os.path.join(path, f))
+                unlink(path.join(path, f))
             logger.info('Image: %s removed.' % f)
         except IndexError:
             logger.warning("Has no deletable disk.")
