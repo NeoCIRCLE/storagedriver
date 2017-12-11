@@ -127,6 +127,26 @@ def get_storage_stat(data_store_type, path):
             'free_percent': free_space_percent}
 
 
+@celery.task()
+def get_file_statistics(datastore):
+    disks = [Disk.get(datastore, name).get_desc()
+             for name in listdir(datastore)
+             if not name.endswith(".dump") and
+             not path.isdir(path.join(datastore, name))]
+    dumps = [{'name': name,
+              'size': path.getsize(path.join(datastore, name))}
+             for name in listdir(datastore) if name.endswith(".dump")]
+    trash = [{'name': name,
+              'size': path.getsize(path.join(datastore, trash_directory,
+                                             name))}
+             for name in listdir(path.join(datastore, trash_directory))]
+    return {
+        'dumps': dumps,
+        'trash': trash,
+        'disks': disks,
+    }
+
+
 @celery.task
 def exists(data_store_type, path, disk_name):
     ''' Recover named disk from the trash directory.
