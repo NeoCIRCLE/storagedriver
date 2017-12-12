@@ -114,8 +114,8 @@ def get_storage_stat(data_store_type, path):
     if data_store_type == "ceph_block":
         with CephConnection(str(path)) as conn:
             stat = conn.cluster.get_cluster_stats()
-            all_space = stat["kb"]
-            free_space = stat["kb_avail"]
+            all_space = stat["kb"] * 1024.0
+            free_space = stat["kb_avail"] * 1024.0
     else:
         s = statvfs(path)
         all_space = s.f_bsize * s.f_blocks
@@ -127,18 +127,24 @@ def get_storage_stat(data_store_type, path):
 
 
 @celery.task()
-def get_file_statistics(datastore):
-    disks = [Disk.get(datastore, name).get_desc()
-             for name in listdir(datastore)
-             if not name.endswith(".dump") and
-             not path.isdir(path.join(datastore, name))]
-    dumps = [{'name': name,
-              'size': path.getsize(path.join(datastore, name))}
-             for name in listdir(datastore) if name.endswith(".dump")]
-    trash = [{'name': name,
-              'size': path.getsize(path.join(datastore, trash_directory,
-                                             name))}
-             for name in listdir(path.join(datastore, trash_directory))]
+def get_file_statistics(data_store_type, datastore):
+    if data_store_type == 'ceph_block':
+        # TODO get proper data
+        disks = []
+        dumps = []
+        trash = []
+    else:
+        disks = [Disk.get(datastore, name).get_desc()
+                 for name in listdir(datastore)
+                 if not name.endswith(".dump") and
+                 not path.isdir(path.join(datastore, name))]
+        dumps = [{'name': name,
+                  'size': path.getsize(path.join(datastore, name))}
+                 for name in listdir(datastore) if name.endswith(".dump")]
+        trash = [{'name': name,
+                  'size': path.getsize(path.join(datastore, trash_directory,
+                                                 name))}
+                 for name in listdir(path.join(datastore, trash_directory))]
     return {
         'dumps': dumps,
         'trash': trash,
