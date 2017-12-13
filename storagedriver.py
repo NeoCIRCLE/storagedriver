@@ -127,27 +127,25 @@ def get_storage_stat(data_store_type, path):
 
 
 @celery.task()
-def get_file_statistics(data_store_type, datastore):
+def get_file_statistics(data_store_type, path_or_pool):
     if data_store_type == 'ceph_block':
-        # TODO get proper data
-        disks = []
-        dumps = []
-        trash = []
+        pool = path_or_pool
+        disk_list = list(data_store_type, str(pool))
+        disks = [ceph_disk for ceph_disk in disk_list
+                 if not ceph_disk['name'].endswith('.dump')]
+        dumps = [ceph_disk for ceph_disk in disk_list
+                 if ceph_disk['name'].endswith('.dump')]
     else:
-        disks = [Disk.get(datastore, name).get_desc()
-                 for name in listdir(datastore)
+        ds_path = path_or_pool
+        disks = [Disk.get(ds_path, name).get_desc()
+                 for name in listdir(ds_path)
                  if not name.endswith(".dump") and
-                 not path.isdir(path.join(datastore, name))]
+                 not path.isdir(path.join(ds_path, name))]
         dumps = [{'name': name,
-                  'size': path.getsize(path.join(datastore, name))}
-                 for name in listdir(datastore) if name.endswith(".dump")]
-        trash = [{'name': name,
-                  'size': path.getsize(path.join(datastore, trash_directory,
-                                                 name))}
-                 for name in listdir(path.join(datastore, trash_directory))]
+                  'size': path.getsize(path.join(ds_path, name))}
+                 for name in listdir(ds_path) if name.endswith(".dump")]
     return {
         'dumps': dumps,
-        'trash': trash,
         'disks': disks,
     }
 
